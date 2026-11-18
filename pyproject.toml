@@ -1,0 +1,33 @@
+[project]
+name = "mcu-harness"
+version = "0.1.0"
+description = "MCU 调试友好型 Agent Harness：把编译器、调试器、串口/RTT、SVD 接入大模型"
+readme = "README.md"
+requires-python = ">=3.10"
+dependencies = ["fastmcp>=4.0", "pylink-square>=2.0"]
+
+[project.optional-dependencies]
+dev = ["pytest>=7"]
+
+[project.scripts]
+# 命令行入口：mcu-build <工程目录>，用于脱离 AI 单独调试构建模块
+mcu-build = "mcu_harness.build.cli:main"
+# 命令行入口：mcu-svd --svd xxx.svd ...，离线查询/解码外设寄存器
+mcu-svd = "mcu_harness.svd.cli:main"
+# 命令行入口：mcu-probe info/read/inspect，验证 J-Link 硬件连接与寄存器读取
+mcu-probe = "mcu_harness.probe.cli:main"
+# 命令行入口：mcu-log，后台非阻塞读取 SEGGER RTT 日志
+mcu-log = "mcu_harness.log.cli:main"
+# MCP Server 入口（stdio 模式）
+mcu-harness = "mcu_harness.server:main"
+
+[build-system]
+requires = ["setuptools>=64"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["src"]

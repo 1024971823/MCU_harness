@@ -1,0 +1,12 @@
+[12/12] Linking C executable blinky.elf
+FAILED: blinky.elf
+/opt/gcc-arm/bin/arm-none-eabi-gcc -mcpu=cortex-m4 -mthumb -T/home/dev/blinky/STM32F411RETx_FLASH.ld -Wl,--gc-sections -Wl,--print-memory-usage CMakeFiles/blinky.elf.dir/Core/Src/main.c.obj -o blinky.elf
+/opt/gcc-arm/bin/../lib/gcc/arm-none-eabi/13.2.1/../../../../arm-none-eabi/bin/ld: CMakeFiles/blinky.elf.dir/Core/Src/main.c.obj: in function `main':
+/home/dev/blinky/Core/Src/main.c:57:(.text.main+0x2a): undefined reference to `MX_USART2_UART_Init'
+/opt/gcc-arm/bin/../lib/gcc/arm-none-eabi/13.2.1/../../../../arm-none-eabi/bin/ld: blinky.elf section `.bss' will not fit in region `RAM'
+/opt/gcc-arm/bin/../lib/gcc/arm-none-eabi/13.2.1/../../../../arm-none-eabi/bin/ld: region `RAM' overflowed by 2048 bytes
+Memory region         Used Size  Region Size  %age Used
+             RAM:      133120 B       128 KB    101.56%
+           FLASH:       24680 B       512 KB      4.71%
+collect2: error: ld returned 1 exit status
+ninja: build stopped: subcommand failed.

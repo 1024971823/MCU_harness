@@ -1,0 +1,26 @@
+[1/5] Building C object CMakeFiles/blinky.elf.dir/Core/Src/main.c.obj
+FAILED: CMakeFiles/blinky.elf.dir/Core/Src/main.c.obj
+/opt/gcc-arm/bin/arm-none-eabi-gcc -DSTM32F411xE -DUSE_HAL_DRIVER -I/home/dev/blinky/Core/Inc -mcpu=cortex-m4 -mthumb -mfpu=fpv4-sp-d16 -mfloat-abi=hard -Wall -Wextra -g3 -O0 -std=gnu11 -MD -MT CMakeFiles/blinky.elf.dir/Core/Src/main.c.obj -MF CMakeFiles/blinky.elf.dir/Core/Src/main.c.obj.d -o CMakeFiles/blinky.elf.dir/Core/Src/main.c.obj -c /home/dev/blinky/Core/Src/main.c
+/home/dev/blinky/Core/Src/main.c: In function 'main':
+/home/dev/blinky/Core/Src/main.c:42:3: error: 'GPIO_InitStruct' undeclared (first use in this function)
+   42 |   GPIO_InitStruct.Pin = GPIO_PIN_5;
+      |   ^~~~~~~~~~~~~~~
+/home/dev/blinky/Core/Src/main.c:42:3: note: each undeclared identifier is reported only once for each function it appears in
+/home/dev/blinky/Core/Src/main.c:37:12: warning: unused variable 'tick' [-Wunused-variable]
+   37 |   uint32_t tick = 0;
+      |            ^~~~
+In file included from /home/dev/blinky/Core/Src/main.c:3:
+/home/dev/blinky/Core/Inc/board.h:10:9: warning: "LED_PIN" redefined
+   10 | #define LED_PIN 5
+      |         ^~~~~~~
+[2/5] Building C object CMakeFiles/blinky.elf.dir/Core/Src/uart.c.obj
+FAILED: CMakeFiles/blinky.elf.dir/Core/Src/uart.c.obj
+In file included from /home/dev/blinky/Core/Src/uart.c:2:
+/home/dev/blinky/Core/Inc/board.h:10:9: warning: "LED_PIN" redefined
+   10 | #define LED_PIN 5
+      |         ^~~~~~~
+/home/dev/blinky/Core/Src/uart.c:88:1: fatal error: stm32f4xx_hal_uart_ex.h: No such file or directory
+   88 | #include "stm32f4xx_hal_uart_ex.h"
+      | ^~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+compilation terminated.
+ninja: build stopped: subcommand failed.
