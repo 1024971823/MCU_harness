@@ -73,6 +73,7 @@ class SvdPeripheral:
     base_address: int
     description: str = ""
     group_name: str = ""
+    access: str | None = None
     registers: tuple[SvdRegister, ...] = ()
 
     def reg_address(self, reg: SvdRegister) -> int:

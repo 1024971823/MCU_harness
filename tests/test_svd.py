@@ -122,3 +122,93 @@ def test_find_register_strips_st_peripheral_prefix():
     assert find_register(find_peripheral(dev, "GPIOA"), "MODER").name == "GPIOA_MODER"
     assert find_register(find_peripheral(dev, "GPIOA"), "GPIOA_MODER").name == "GPIOA_MODER"
     assert find_register(find_peripheral(dev, "USART1"), "CR1").name == "USART_CR1"
+
+
+def test_to_text_trims_long_boilerplate_when_enum_matched():
+    dev = load_svd(SVD_FIX)
+    gpioa = find_peripheral(dev, "GPIOA")
+    moder = find_register(gpioa, "MODER")
+    dec = decode_register(gpioa, moder, "0x00000400")
+    txt = dec.to_text()
+    assert "Output: General purpose output mode" in txt
+    assert "Port x configuration I/O pin 5" in txt  # 短描述(<45字符)仍保留
+
+    # 超长模板描述在已有枚举含义时应被省略，避免刷屏
+    long_desc = "Port x configuration I/O pin y (y = 15 to 0) " + ("boilerplate " * 10)
+    from mcu_harness.svd.decoder import DecodedField, DecodedRegister
+
+    long_dec = DecodedRegister(
+        peripheral="GPIOA",
+        register="MODER",
+        address="0x42020000",
+        raw_value=0x400,
+        raw_hex="0x00000400",
+        size_bits=32,
+        fields=[
+            DecodedField(
+                name="MODE5",
+                bit_range="[11:10]",
+                lsb=10,
+                width=2,
+                value=1,
+                hex_value="0x1",
+                meaning="B_0x1: Output",
+                description=long_desc,
+            )
+        ],
+    )
+    rendered = long_dec.to_text()
+    assert "B_0x1: Output" in rendered
+    assert "boilerplate" not in rendered
+
+
+def test_derived_peripheral_incremental_merge_and_default_access():
+    """验证派生外设增量合并寄存器以及外设级默认 access 继承（FIX-08）。"""
+    import xml.etree.ElementTree as ET
+    from mcu_harness.probe import MockProbe, inspect_peripheral_registers
+    from mcu_harness.svd import parse_svd_root
+
+    xml_text = """
+    <device><name>TEST</name><peripherals>
+      <peripheral>
+        <name>BASE_TIM</name>
+        <baseAddress>0x40000000</baseAddress>
+        <access>read-write</access>
+        <registers>
+          <register><name>CR1</name><addressOffset>0x00</addressOffset></register>
+          <register><name>WO_TRIGGER</name><addressOffset>0x04</addressOffset><access>write-only</access></register>
+        </registers>
+      </peripheral>
+      <peripheral derivedFrom="BASE_TIM">
+        <name>EXT_TIM</name>
+        <baseAddress>0x40001000</baseAddress>
+        <registers>
+          <register><name>CR1</name><addressOffset>0x00</addressOffset><description>Overridden CR1</description></register>
+          <register><name>EXTRA</name><addressOffset>0x08</addressOffset></register>
+        </registers>
+      </peripheral>
+      <peripheral>
+        <name>WO_PORT</name>
+        <baseAddress>0x40002000</baseAddress>
+        <access>write-only</access>
+        <registers>
+          <register><name>SET</name><addressOffset>0x00</addressOffset></register>
+          <register><name>STAT</name><addressOffset>0x04</addressOffset><access>read-only</access></register>
+        </registers>
+      </peripheral>
+    </peripherals></device>
+    """
+    dev = parse_svd_root(ET.fromstring(xml_text))
+    ext = find_peripheral(dev, "EXT_TIM")
+    names = [r.name for r in ext.registers]
+    assert names == ["CR1", "WO_TRIGGER", "EXTRA"]
+    assert find_register(ext, "CR1").description == "Overridden CR1"
+    assert find_register(ext, "EXTRA").access == "read-write"  # 继承外设默认 access
+
+    wo_port = find_peripheral(dev, "WO_PORT")
+    assert find_register(wo_port, "SET").access == "write-only"
+    assert find_register(wo_port, "STAT").access == "read-only"
+
+    with MockProbe() as probe:
+        snap = inspect_peripheral_registers(probe, dev, "WO_PORT", read_all=True)
+        assert [r.register for r in snap.registers] == ["STAT"]

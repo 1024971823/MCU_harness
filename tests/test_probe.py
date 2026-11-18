@@ -134,10 +134,16 @@ def test_jlink_probe_with_fake_pylink(monkeypatch):
             return self._halted
 
         def halt(self):
+            calls.append(("halt",))
             self._halted = True
             return True
 
+        def go(self):
+            calls.append(("go",))
+            self._halted = False
+
         def restart(self):
+            calls.append(("restart_FORBIDDEN",))
             self._halted = False
             return True
 
@@ -163,7 +169,100 @@ def test_jlink_probe_with_fake_pylink(monkeypatch):
         assert info.serial_no == "12345678"
         assert probe.read_u32(0xE000ED00, 1) == [0x12345678]
         assert probe.halt() is True and probe.is_halted() is True
+        assert probe.halt() is False  # 已处于暂停态，再次 halt 不产生状态变更
         assert probe.resume() is True and probe.is_halted() is False
+        assert probe.resume() is False  # 已处于运行态，再次 resume 返回 False
 
-    # 确认没有调用过 reset，保护芯片现场
-    assert [c[0] for c in calls] == ["open", "set_tif", "connect", "read32", "close"]
+    # 确认没有调用过 reset / restart，保护芯片现场（FIX-01）
+    assert [c[0] for c in calls] == ["open", "set_tif", "connect", "read32", "halt", "halt", "go", "close"]
+
+
+def test_jlink_resume_falls_back_to_dll_go(monkeypatch):
+    """验证无 .go() 方法的真实 pylink.JLink 实例走 _dll.JLINKARM_Go()，绝不复位（FIX-01）。"""
+    calls = []
+
+    class FakeDll:
+        def JLINKARM_Go(self):
+            calls.append("JLINKARM_Go")
+
+    class FakePyLinkStyleJLink:
+        _dll = FakeDll()
+
+        def __init__(self, lib=None):
+            self._halted = True
+
+        def open(self, serial_no=None):
+            pass
+
+        def set_tif(self, interface):
+            pass
+
+        def connect(self, chip_name, speed="auto"):
+            pass
+
+        def opened(self):
+            return True
+
+        def connected(self):
+            return True
+
+        def halted(self):
+            return self._halted
+
+        def restart(self):
+            calls.append("restart_FORBIDDEN")
+
+        def close(self):
+            pass
+
+    fake_pylink = SimpleNamespace(
+        JLink=FakePyLinkStyleJLink,
+        Library=lambda dllpath=None: object(),
+        enums=SimpleNamespace(JLinkInterfaces=SimpleNamespace(SWD=1, JTAG=0)),
+    )
+    monkeypatch.setattr("mcu_harness.probe.jlink._load_pylink_library", lambda dll_path=None: (fake_pylink, object()))
+
+    with JLinkProbe() as probe:
+        assert probe.resume() is True
+        probe._jlink._halted = False
+        assert probe.resume() is False
+
+    assert calls == ["JLINKARM_Go"]
+
+
+def test_probe_manager_clean_state_on_connect_failure_and_device_switch(monkeypatch):
+    """验证连接失败不留脏状态、切换芯片型号自动重连、以及非法参数归一化（FIX-03）。"""
+    mgr = ProbeManager()
+    should_fail = {"flag": True}
+    created = []
+
+    class FlakyProbe(MockProbe):
+        def connect(self):
+            created.append(self.device)
+            if should_fail["flag"]:
+                raise ProbeError("target not powered")
+            return super().connect()
+
+    monkeypatch.setattr(mgr, "_create_probe", lambda cfg: FlakyProbe(device=str(cfg["device"])))
+
+    with pytest.raises(ProbeError, match="not powered"):
+        mgr.connect(backend="mock", device="STM32H563ZI")
+    assert mgr._probe is None and mgr._config == {}
+
+    # 上电后再次连接应直接成功
+    should_fail["flag"] = False
+    info = mgr.connect(backend="mock", device="STM32H563ZI")
+    assert info.connected is True and info.device == "STM32H563ZI"
+
+    # session() 指定不同芯片型号应自动触发重连切换
+    with mgr.session(device="STM32H563RG") as p2:
+        assert p2.info().device == "STM32H563RG"
+    assert created == ["STM32H563ZI", "STM32H563ZI", "STM32H563RG"]
+    mgr.disconnect()
+
+    with pytest.raises(ProbeError, match="serial_no"):
+        JLinkProbe(serial_no="not-a-number")
+    with pytest.raises(ProbeError, match="speed"):
+        JLinkProbe(speed="fast")
+    with pytest.raises(ProbeError, match="interface"):
+        JLinkProbe(interface="UART")

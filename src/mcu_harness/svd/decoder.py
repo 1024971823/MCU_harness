@@ -58,9 +58,14 @@ class DecodedRegister:
         lines.append(f"  {'Bits':<9} {'Field':<16} {'Val':<10} {'Meaning / Description'}")
         lines.append(f"  {'-' * 8:<9} {'-' * 15:<16} {'-' * 9:<10} {'-' * 36}")
         for f in self.fields:
-            detail = f.meaning or f.description or ""
-            if f.meaning and f.description and f.meaning.lower() not in f.description.lower():
-                detail = f"{f.meaning} — {f.description}"
+            if f.meaning:
+                # 已有明确枚举含义时，仅附带简短说明，避免 ST SVD 长段模板描述刷屏
+                detail = f.meaning
+                if f.description and len(f.description) <= 45 and f.meaning.lower() not in f.description.lower():
+                    detail = f"{f.meaning} — {f.description}"
+            else:
+                desc = f.description or ""
+                detail = desc if len(desc) <= 90 else desc[:87] + "..."
             val_str = f"{f.hex_value} ({f.value})" if f.value >= 10 else f"{f.value} ({f.hex_value})"
             lines.append(f"  {f.bit_range:<9} {f.name:<16} {val_str:<10} {detail}")
         return "\n".join(lines)

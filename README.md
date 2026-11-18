@@ -27,10 +27,12 @@ MCU_harness/
 │   │   ├── manager.py         #    长驻会话管理器（线程安全）
 │   │   ├── peripheral.py      #    SVD + DebugProbe 联合解码外设寄存器
 │   │   └── cli.py             #    命令行入口，验证 J-Link 连板与读寄存器
-│   └── log/                   # ✅ 非阻塞调试日志模块（SEGGER RTT）
-│       ├── ring_buffer.py     #    线程安全环形缓冲（增量 UTF-8 / seq / grep -C）
-│       ├── rtt_collector.py   #    后台线程周期轮询 RTT 上行通道
-│       └── cli.py             #    命令行入口，单次拉取或 --follow 跟踪
+│   ├── log/                   # ✅ 非阻塞调试日志模块（SEGGER RTT）
+│   │   ├── ring_buffer.py     #    线程安全环形缓冲（增量 UTF-8 / seq / grep -C）
+│   │   ├── rtt_collector.py   #    后台线程周期轮询 RTT 上行通道（支持 .elf 自动定位）
+│   │   └── cli.py             #    命令行入口，单次拉取或 --follow 跟踪
+│   └── elf/                   # ✅ 纯 Python ELF 符号表解析（定位 _SEGGER_RTT 等）
+│       └── symbols.py
 ├── examples/
 │   ├── demo_fw/               # CMake 示例工程（主机 gcc 可编译）
 │   └── demo_make_fw/          # Makefile 示例工程（主机 gcc 可编译）
@@ -75,10 +77,10 @@ PYTHONPATH=src .venv/bin/python -m mcu_harness.probe.cli info
 PYTHONPATH=src .venv/bin/python -m mcu_harness.probe.cli read 0xE000ED00 --count 1
 PYTHONPATH=src .venv/bin/python -m mcu_harness.probe.cli inspect --svd /你的/STM32H563.svd GPIOA MODER
 
-# 非阻塞 RTT 日志采集自测 / 实机读取
+# 非阻塞 RTT 日志采集自测 / 实机读取（传入 --elf 可秒定位 _SEGGER_RTT 地址）
 PYTHONPATH=src .venv/bin/python -m mcu_harness.log.cli --mock
-PYTHONPATH=src .venv/bin/python -m mcu_harness.log.cli --tail 50
-PYTHONPATH=src .venv/bin/python -m mcu_harness.log.cli --follow
+PYTHONPATH=src .venv/bin/python -m mcu_harness.log.cli --elf /你的/firmware.elf --tail 50
+PYTHONPATH=src .venv/bin/python -m mcu_harness.log.cli --elf /你的/firmware.elf --follow
 ```
 
 ## 接入 MCP 客户端（如 Antigravity）
@@ -94,6 +96,7 @@ PYTHONPATH=src .venv/bin/python -m mcu_harness.log.cli --follow
       "env": {
         "PYTHONPATH": "/home/Srakoul/Downloads/MCU_harness/src",
         "MCU_HARNESS_SVD_PATH": "/你的/STM32H563.svd",
+        "MCU_HARNESS_ELF_PATH": "/你的/firmware.elf",
         "MCU_HARNESS_DEVICE": "STM32H563ZI"
       }
     }

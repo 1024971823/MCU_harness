@@ -214,3 +214,51 @@ def test_call_read_debug_log_via_mcp():
             default_probe_manager.set_probe(None)
 
     asyncio.run(_run())
+
+
+def test_mcp_input_validation_and_error_fallbacks(tmp_path):
+    """验证 MCP 层入参边界校验与统一异常兜底（FIX-04）。"""
+    bad_svd = tmp_path / "broken.svd"
+    bad_svd.write_text("<device><broken", encoding="utf-8")
+
+    mock_probe = MockProbe()
+    mock_probe.connect()
+    default_probe_manager.set_probe(mock_probe)
+
+    async def _run():
+        try:
+            async with Client(mcp) as client:
+                # 1. read_memory 负数、越界、未对齐、布尔值拦截
+                for payload in (
+                    {"address": -4},
+                    {"address": "0x100000000"},
+                    {"address": "0xFFFFFFFD", "width": 32, "count": 1},
+                    {"address": "0x20000001", "width": 32},
+                    {"address": "0x20000001", "width": 16},
+                    {"address": True},
+                ):
+                    res = _tool_data(await client.call_tool("read_memory", payload))
+                    assert "error" in res
+
+                # 2. inspect_peripheral 遇到损坏 SVD 返回统一 error 字段
+                res_svd = _tool_data(
+                    await client.call_tool(
+                        "inspect_peripheral",
+                        {"peripheral": "GPIOA", "register": "MODER", "svd_path": str(bad_svd)},
+                    )
+                )
+                assert "error" in res_svd
+
+                # 3. read_debug_log context_lines 越界校验
+                res_ctx = _tool_data(await client.call_tool("read_debug_log", {"context_lines": 99}))
+                assert "error" in res_ctx
+
+                # 4. probe_control 非法 serial_no 返回结构化错误
+                res_sn = _tool_data(
+                    await client.call_tool("probe_control", {"action": "connect", "serial_no": "invalid"})
+                )
+                assert "error" in res_sn
+        finally:
+            default_probe_manager.set_probe(None)
+
+    asyncio.run(_run())

@@ -16,6 +16,55 @@ from typing import Any
 from .base import DebugProbe, ProbeError, ProbeInfo
 
 
+def normalize_device(device: str | None = None) -> str:
+    val = (device or os.environ.get("MCU_HARNESS_DEVICE") or "STM32H563ZI").strip()
+    if not val:
+        raise ProbeError("Device name cannot be empty")
+    return val
+
+
+def normalize_interface(interface: str | None = None) -> str:
+    val = (interface or os.environ.get("MCU_HARNESS_INTERFACE") or "SWD").strip().upper()
+    if val not in ("SWD", "JTAG"):
+        raise ProbeError(f"Unsupported interface {interface!r} (expected SWD or JTAG)")
+    return val
+
+
+def normalize_speed(speed: int | str | None = None) -> int | str:
+    raw = speed if speed is not None else os.environ.get("MCU_HARNESS_SPEED", "auto")
+    if isinstance(raw, int) and not isinstance(raw, bool):
+        if raw <= 0:
+            raise ProbeError(f"Invalid speed {raw!r}: must be > 0 kHz or 'auto'")
+        return raw
+    if isinstance(raw, str):
+        s = raw.strip()
+        if not s or s.lower() == "auto":
+            return "auto"
+        try:
+            khz = int(s, 10)
+        except ValueError as e:
+            raise ProbeError(f"Invalid speed {speed!r}: expected integer kHz or 'auto'") from e
+        if khz <= 0:
+            raise ProbeError(f"Invalid speed {speed!r}: must be > 0 kHz")
+        return khz
+    raise ProbeError(f"Invalid speed {speed!r}")
+
+
+def normalize_serial_no(serial_no: int | str | None = None) -> int | None:
+    raw = serial_no if serial_no not in (None, "") else os.environ.get("MCU_HARNESS_SERIAL")
+    if raw in (None, ""):
+        return None
+    if isinstance(raw, bool):
+        raise ProbeError(f"Invalid J-Link serial_no: {serial_no!r}")
+    try:
+        sn = int(str(raw).strip(), 10)
+    except ValueError as e:
+        raise ProbeError(f"Invalid J-Link serial_no {raw!r}: expected decimal digits") from e
+    if sn <= 0:
+        raise ProbeError(f"Invalid J-Link serial_no {raw!r}: must be positive")
+    return sn
+
+
 def _discover_jlink_dll(explicit_path: str | os.PathLike | None = None) -> str | None:
     """按优先级定位 libjlinkarm.so（或 Windows 下的 JLink_x64.dll）。"""
     env_or_arg = explicit_path or os.environ.get("MCU_HARNESS_JLINK_LIB")
@@ -79,15 +128,15 @@ class JLinkProbe(DebugProbe):
         self,
         *,
         device: str | None = None,
-        interface: str = "SWD",
-        speed: int | str = "auto",
+        interface: str | None = None,
+        speed: int | str | None = None,
         serial_no: int | str | None = None,
         lib_path: str | os.PathLike | None = None,
     ) -> None:
-        self.device = device or os.environ.get("MCU_HARNESS_DEVICE", "STM32H563ZI")
-        self.interface = interface.upper()
-        self.speed = speed
-        self.serial_no = int(serial_no) if serial_no not in (None, "") else None
+        self.device = normalize_device(device)
+        self.interface = normalize_interface(interface)
+        self.speed = normalize_speed(speed)
+        self.serial_no = normalize_serial_no(serial_no)
         self.lib_path = lib_path
         self._jlink: Any = None
 
@@ -211,14 +260,26 @@ class JLinkProbe(DebugProbe):
     def halt(self) -> bool:
         self._require_connected()
         try:
-            return bool(self._jlink.halt())
+            was_halted = bool(self._jlink.halted())
+            ok = bool(self._jlink.halt())
+            return ok and (not was_halted)
         except Exception as e:
             raise ProbeError(f"halt failed: {e}") from e
 
     def resume(self) -> bool:
         self._require_connected()
         try:
-            return bool(self._jlink.restart())
+            was_halted = bool(self._jlink.halted())
+            if not was_halted:
+                return False
+            # 单纯恢复内核从当前 PC 继续向下执行，不触发任何硬件/内核复位
+            if hasattr(self._jlink, "go"):
+                self._jlink.go()
+            elif hasattr(getattr(self._jlink, "_dll", None), "JLINKARM_Go"):
+                self._jlink._dll.JLINKARM_Go()
+            else:
+                self._jlink.restart()
+            return was_halted
         except Exception as e:
             raise ProbeError(f"resume failed: {e}") from e
 

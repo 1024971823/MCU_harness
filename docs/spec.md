@@ -92,3 +92,19 @@
 > 1. 生成清晰的项目目录结构、虚拟环境配置（`pyproject.toml` 或 `requirements.txt`）以及中文注释。
 > 2. 先实现 `build_firmware` 和 `inspect_peripheral`（基于 `cmsis-svd`）两个基础工具的最小可运行代码，并保留 OpenOCD/GDB 连接的接口抽象。
 > 3. 每写完一个模块，请告诉我如何在 Windows 终端里用命令行单独测试它。
+
+---
+
+## 6. 实际落地架构与演进同步（Linux + STM32H563 + SEGGER J-Link）
+
+在项目实际推进中，已针对目标硬件 **STM32H563（Cortex-M33）+ SEGGER J-Link + Ozone** 完成了以下技术选型收敛与 Phase 1 落地（详见 [hardware_target.md](hardware_target.md)）：
+
+1. **宿主与构建系统**：以 Linux 为开发宿主，[`build_firmware`](../src/mcu_harness/build/runner.py) 同时支持 **CMake（Ninja/Make）** 与传统 **Makefile（`make`/`gmake`/`mingw32-make`）** 工程，并自动提取 GCC/ld/CMake/Make 诊断与 `arm-none-eabi-size` 内存占用。
+2. **探针直连架构（`DebugProbe` + `pylink-square`）**：
+   - Phase 1 通过 [`JLinkProbe`](../src/mcu_harness/probe/jlink.py)（基于 `pylink-square` 调用 `libjlinkarm.so`）直连 J-Link，附着时不触发芯片复位、读内存/外设寄存器无需暂停 CPU、恢复运行走 `JLINKARM_Go` 继续执行而不复位，从而与 Ozone 人工调试和平共存。
+   - Phase 2 再按需引入 `JLinkGDBServerCLExe + pygdbmi` 处理源码级断点与调用栈回溯。
+3. **零外部依赖的 SVD 与 ELF 解析层**：
+   - [`mcu_harness.svd`](../src/mcu_harness/svd/parser.py) 基于 Python 标准库解析 `.svd`/`.svd.gz`，支持 `derivedFrom` 派生外设增量覆盖、外设默认访问权限继承、`<dim>` 数组展开、`<cluster>` 簇展开与 ST 寄存器前缀自动剥离。
+   - [`mcu_harness.elf`](../src/mcu_harness/elf/symbols.py) 基于标准库直接读取 ELF32/ELF64 `.symtab`，自动将 ARM Thumb 函数符号地址最低位（LSB）清零对齐，并用于自动定位 `_SEGGER_RTT` 控制块地址。
+4. **单向锁层级的非阻塞 RTT 日志采集**：
+   - [`RttLogCollector`](../src/mcu_harness/log/rtt_collector.py) 与 [`ProbeManager`](../src/mcu_harness/probe/manager.py) 严格遵循 `_ctrl_lock -> _pm._lock` 的单向锁序，断连回调与线程回收均在锁外执行，消除并发死锁隐患。

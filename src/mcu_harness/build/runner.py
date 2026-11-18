@@ -20,6 +20,7 @@ import os
 import re
 import shlex
 import shutil
+import stat
 import subprocess
 import time
 from dataclasses import asdict, dataclass, field
@@ -31,7 +32,17 @@ _RE_ANSI = re.compile(r"\x1b\[[0-9;]*[A-Za-z]")
 _ARTIFACT_SUFFIXES = (".elf", ".hex", ".bin", ".axf", ".out")
 _SKIP_ARTIFACT_DIRS = {"CMakeFiles", ".git", ".venv", "node_modules"}
 _DEFAULT_MAKEFILES = ("GNUmakefile", "makefile", "Makefile")
+_MAKE_EXECUTABLES = ("make", "gmake", "mingw32-make")
 _RAW_TAIL_LINES = 30
+
+
+def _find_make_executable() -> str | None:
+    """按跨平台优先级查找 Make 可执行文件（make / gmake / mingw32-make）。"""
+    for candidate in _MAKE_EXECUTABLES:
+        found = shutil.which(candidate)
+        if found:
+            return found
+    return None
 
 
 @dataclass
@@ -338,9 +349,9 @@ def _build_make(
     max_warnings: int,
     t0: float,
 ) -> BuildResult:
-    make_bin = shutil.which("make")
+    make_bin = _find_make_executable()
     if make_bin is None:
-        return _fail("make", "precheck", "make not found in PATH", t0)
+        return _fail("make", "precheck", "make (or gmake / mingw32-make) not found in PATH", t0)
 
     mf_args: list[str] = []
     if makefile_path is not None and not (
@@ -477,7 +488,13 @@ def _find_artifacts(root: Path, project: Path) -> list[Artifact]:
             p = Path(dirpath) / fname
             if p.suffix.lower() not in _ARTIFACT_SUFFIXES:
                 continue
-            st = p.stat()
+            try:
+                st = p.stat()
+            except OSError:
+                # 忽略悬空符号链接或瞬时被删除的文件（FIX-07）
+                continue
+            if not stat.S_ISREG(st.st_mode):
+                continue
             try:
                 shown = p.relative_to(project).as_posix()
             except ValueError:

@@ -106,13 +106,15 @@ class MockProbe(DebugProbe):
 
     def halt(self) -> bool:
         self._require_conn()
+        was_halted = self._halted
         self._halted = True
-        return True
+        return not was_halted
 
     def resume(self) -> bool:
         self._require_conn()
+        was_halted = self._halted
         self._halted = False
-        return True
+        return was_halted
 
     def is_halted(self) -> bool:
         self._require_conn()

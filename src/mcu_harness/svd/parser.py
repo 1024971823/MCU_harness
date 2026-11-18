@@ -12,6 +12,7 @@
 
 from __future__ import annotations
 
+import dataclasses
 import gzip
 import os
 import re
@@ -52,6 +53,7 @@ def parse_svd_root(root: ET.Element) -> SvdDevice:
     """从 XML Element 根节点解析 SvdDevice（方便单元测试直接喂 XML 字符串）。"""
     dev_name = _text(root, "name") or "UnknownDevice"
     dev_desc = _clean_desc(_text(root, "description"))
+    dev_access = _text(root, "access") or None
     cpu_name = _text(root.find("cpu"), "name") if root.find("cpu") is not None else ""
 
     raw_periphs = root.findall("./peripherals/peripheral")
@@ -89,20 +91,40 @@ def parse_svd_root(root: ET.Element) -> SvdDevice:
 
         desc = _clean_desc(_text(pe, "description")) or (base_periph.description if base_periph else "")
         group = _text(pe, "groupName") or (base_periph.group_name if base_periph else "")
+        periph_access = _text(pe, "access") or (base_periph.access if base_periph else dev_access)
+
+        base_regs: list[SvdRegister] = []
+        if base_periph is not None:
+            for r in base_periph.registers:
+                if r.access is None and periph_access is not None:
+                    r = dataclasses.replace(r, access=periph_access)
+                base_regs.append(r)
 
         regs_el = pe.find("registers")
         if regs_el is not None:
-            regs = _parse_registers_container(regs_el, prefix="")
-        elif base_periph is not None:
-            regs = base_periph.registers
+            own_regs = _parse_registers_container(
+                regs_el,
+                prefix="",
+                default_access=periph_access,
+                template_regs={r.name: r for r in base_regs},
+            )
+            if base_regs:
+                # 增量合并（FIX-08）：先保留模板外设的全部寄存器，再用当前外设同名寄存器覆盖或追加
+                merged = {r.name: r for r in base_regs}
+                for r in own_regs:
+                    merged[r.name] = r
+                regs = tuple(sorted(merged.values(), key=lambda r: (r.address_offset, r.name)))
+            else:
+                regs = own_regs
         else:
-            regs = ()
+            regs = tuple(base_regs)
 
         p_obj = SvdPeripheral(
             name=pname,
             base_address=base_addr,
             description=desc,
             group_name=group,
+            access=periph_access,
             registers=regs,
         )
         parsed_periphs[pname] = p_obj
@@ -128,33 +150,56 @@ def parse_svd_root(root: ET.Element) -> SvdDevice:
 # ---------------------------------------------------------------------------
 
 
-def _parse_registers_container(container: ET.Element, prefix: str, base_offset: int = 0) -> tuple[SvdRegister, ...]:
+def _parse_registers_container(
+    container: ET.Element,
+    prefix: str,
+    base_offset: int = 0,
+    *,
+    default_access: str | None = None,
+    template_regs: dict[str, SvdRegister] | None = None,
+) -> tuple[SvdRegister, ...]:
     """解析 <registers> 或 <cluster>，支持嵌套 <cluster> 与 <dim> 展开。"""
     regs: list[SvdRegister] = []
-    by_name: dict[str, SvdRegister] = {}
+    by_name: dict[str, SvdRegister] = dict(template_regs) if template_regs else {}
     enum_registry: dict[str, tuple[SvdEnumeratedValue, ...]] = {}
 
     for child in container:
         if child.tag == "register":
-            for reg in _parse_register_element(child, prefix, base_offset, by_name, enum_registry):
+            for reg in _parse_register_element(
+                child, prefix, base_offset, by_name, enum_registry, default_access=default_access
+            ):
                 regs.append(reg)
                 by_name[reg.name] = reg
         elif child.tag == "cluster":
-            regs.extend(_parse_cluster_element(child, prefix, base_offset))
+            regs.extend(_parse_cluster_element(child, prefix, base_offset, default_access=default_access))
 
     regs.sort(key=lambda r: (r.address_offset, r.name))
     return tuple(regs)
 
 
-def _parse_cluster_element(el: ET.Element, prefix: str, base_offset: int) -> list[SvdRegister]:
+def _parse_cluster_element(
+    el: ET.Element,
+    prefix: str,
+    base_offset: int,
+    *,
+    default_access: str | None = None,
+) -> list[SvdRegister]:
     cname_tpl = _text(el, "name") or ""
     offset = base_offset + (_parse_int(_text(el, "addressOffset")) or 0)
+    cluster_access = _text(el, "access") or default_access
     indices, dim_inc = _expand_dim(el)
     out: list[SvdRegister] = []
     for i, idx in enumerate(indices):
         cname = _apply_dim_name(cname_tpl, idx)
         sub_prefix = f"{prefix}{cname}_" if cname else prefix
-        out.extend(_parse_registers_container(el, prefix=sub_prefix, base_offset=offset + i * dim_inc))
+        out.extend(
+            _parse_registers_container(
+                el,
+                prefix=sub_prefix,
+                base_offset=offset + i * dim_inc,
+                default_access=cluster_access,
+            )
+        )
     return out
 
 
@@ -164,6 +209,8 @@ def _parse_register_element(
     base_offset: int,
     by_name: dict[str, SvdRegister],
     enum_registry: dict[str, tuple[SvdEnumeratedValue, ...]],
+    *,
+    default_access: str | None = None,
 ) -> list[SvdRegister]:
     name_tpl = _text(el, "name")
     if not name_tpl:
@@ -180,7 +227,7 @@ def _parse_register_element(
 
     size = _parse_int(_text(el, "size")) or (tmpl.size if tmpl else 32)
     desc = _clean_desc(_text(el, "description")) or (tmpl.description if tmpl else "")
-    access = _text(el, "access") or (tmpl.access if tmpl else None)
+    access = _text(el, "access") or (tmpl.access if tmpl and tmpl.access else default_access)
     reset_val = _parse_int(_text(el, "resetValue"))
     if reset_val is None and tmpl is not None:
         reset_val = tmpl.reset_value

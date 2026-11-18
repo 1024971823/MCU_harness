@@ -108,10 +108,12 @@ _RE_FLAG = re.compile(r"\s*\[(?P<flag>-W[^\]]+)\]\s*$")
 _RE_SNIPPET = re.compile(r"^\s*\d*\s+\|")
 
 # 链接器：main.c:57:(.text.main+0x1a): undefined reference to `foo'
+#         C:\proj\main.c:57:(.text.main+0x1a): undefined reference to `foo'
 #         foo.o:(.bss+0x0): multiple definition of `bar'
 _RE_LD_OBJ_LOC = re.compile(
-    r"^(?P<file>[^\s:]+?):(?:(?P<line>\d+):)?(?:\([^)]*\):)?\s*(?P<msg>.*)$"
+    r"^(?P<file>(?:[A-Za-z]:[/\\])?[^\s:]+?):(?:(?P<line>\d+):(?:\([^)]*\):)?|\([^)]*\):)\s*(?P<msg>.*)$"
 )
+_RE_WIN_DRIVE = re.compile(r"^[A-Za-z]:[/\\]")
 _LD_ERROR_KEYWORDS = (
     "undefined reference to",
     "multiple definition of",
@@ -432,15 +434,24 @@ def _add(result: ParsedOutput, seen: dict, diag: Diagnostic, merge: bool = True)
 
 
 def _norm(path: str | None, project_dir: str | None) -> str | None:
-    """绝对路径 -> 相对工程根目录的路径（统一用 / 分隔）。"""
+    """绝对路径 -> 相对工程根目录的路径（统一用 / 分隔，兼容 Windows 盘符路径）。"""
     if not path:
         return path
     p = path.strip()
-    if project_dir and os.path.isabs(p):
-        try:
-            rel = os.path.relpath(p, project_dir)
-            if not rel.startswith(".."):
-                p = rel
-        except ValueError:  # Windows 跨盘符
-            pass
+    if project_dir:
+        if _RE_WIN_DRIVE.match(p) and _RE_WIN_DRIVE.match(project_dir.strip()):
+            from pathlib import PureWindowsPath
+
+            try:
+                rel = PureWindowsPath(p).relative_to(PureWindowsPath(project_dir.strip()))
+                return rel.as_posix()
+            except ValueError:
+                return p.replace("\\", "/")
+        if os.path.isabs(p):
+            try:
+                rel = os.path.relpath(p, project_dir)
+                if not rel.startswith(".."):
+                    p = rel
+            except ValueError:  # Windows 跨盘符
+                pass
     return p.replace("\\", "/")

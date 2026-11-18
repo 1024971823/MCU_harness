@@ -115,3 +115,15 @@ def test_make_custom_makefile_and_missing_target(make_project):
     r_bad = build_firmware(make_project, makefile="Makefile.custom", target="no_such_target")
     assert not r_bad.success
     assert any(e.category == "make" and "No rule to make target" in e.message for e in r_bad.errors)
+
+
+def test_dangling_symlink_in_artifacts_is_ignored(make_project):
+    """构建目录下存在悬空软链接时不应引发 stat() 异常（FIX-07）。"""
+    broken = make_project / "build" / "broken.elf"
+    broken.parent.mkdir(parents=True, exist_ok=True)
+    broken.symlink_to("/nonexistent/missing_target.elf")
+
+    r = build_firmware(make_project)
+    assert r.success
+    assert all(not a.path.endswith("broken.elf") for a in r.artifacts)
+    assert any(a.path.endswith("demo_fw.elf") for a in r.artifacts)

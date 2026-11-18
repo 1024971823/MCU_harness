@@ -2,10 +2,12 @@
 
 from __future__ import annotations
 
+import threading
 import time
 
 from mcu_harness.log import RingLogBuffer, RttLogCollector
 from mcu_harness.probe import MockProbe, ProbeError, ProbeManager
+from tests.test_elf import _make_minimal_elf32
 
 
 def test_ring_buffer_partial_lines_utf8_and_ansi():
@@ -113,3 +115,152 @@ def test_rtt_collector_survives_transient_probe_error():
     finally:
         collector.stop()
         pm.disconnect()
+
+
+def test_rtt_collector_resolves_block_address_from_elf(tmp_path):
+    elf = tmp_path / "fw.elf"
+    elf.write_bytes(_make_minimal_elf32([("_SEGGER_RTT", 0x20005170, 168)]))
+
+    seen_block_addrs = []
+
+    class RecordingMockProbe(MockProbe):
+        def rtt_start(self, block_address=None):
+            seen_block_addrs.append(block_address)
+            super().rtt_start(block_address=block_address)
+
+    pm = ProbeManager()
+    mock = RecordingMockProbe()
+    mock.connect()
+    mock.push_rtt("from elf addr\n")
+    pm.set_probe(mock)
+
+    collector = RttLogCollector(pm, poll_interval_s=0.005)
+    try:
+        res, st = collector.read(elf_path=elf)
+        assert seen_block_addrs == [0x20005170]
+        assert st.block_address == "0x20005170"
+        assert [e.text for e in res.entries] == ["from elf addr"]
+    finally:
+        collector.stop()
+        pm.disconnect()
+
+
+def test_rtt_collector_survives_unexpected_exception():
+    """后台线程捕获通用异常并写入 last_error 后继续存活（FIX-05）。"""
+
+    class BrokenReadMock(MockProbe):
+        def __init__(self) -> None:
+            super().__init__()
+            self.calls = 0
+
+        def rtt_read(self, channel: int = 0, max_bytes: int = 4096) -> bytes:
+            self.calls += 1
+            if self.calls == 1:
+                raise RuntimeError("unexpected driver glitch")
+            return super().rtt_read(channel, max_bytes)
+
+    pm = ProbeManager()
+    mock = BrokenReadMock()
+    mock.connect()
+    mock.push_rtt("after glitch\n")
+    pm.set_probe(mock)
+
+    collector = RttLogCollector(pm, poll_interval_s=0.005)
+    try:
+        collector.start()
+        deadline = time.monotonic() + 1.5
+        got = []
+        saw_error = False
+        while time.monotonic() < deadline:
+            st = collector.status()
+            if st.last_error and "RuntimeError" in st.last_error:
+                saw_error = True
+            res, _ = collector.read(auto_start=False)
+            if res.entries:
+                got = res.entries
+                break
+            time.sleep(0.02)
+        assert [e.text for e in got] == ["after glitch"]
+        assert collector.is_running() is True
+        assert saw_error or mock.calls >= 2
+    finally:
+        collector.stop()
+        pm.disconnect()
+
+
+def test_rtt_collector_concurrent_read_and_disconnect_no_deadlock(monkeypatch):
+    """多线程并发首次 read 与 connect/disconnect 切换，不触发死锁且不重复 rtt_start（FIX-02 / FIX-05）。"""
+    monkeypatch.setenv("MCU_HARNESS_BACKEND", "mock")
+    start_calls = []
+
+    class CountingMockProbe(MockProbe):
+        def rtt_start(self, block_address=None):
+            start_calls.append(block_address)
+            super().rtt_start(block_address=block_address)
+
+    pm = ProbeManager()
+    monkeypatch.setattr(
+        pm,
+        "_create_probe",
+        lambda cfg: CountingMockProbe(device=str(cfg["device"]), interface=str(cfg["interface"])),
+    )
+    pm.connect(backend="mock")
+    collector = RttLogCollector(pm, poll_interval_s=0.005)
+    errors = []
+
+    # 1. 并发首次自动启动读取：rtt_start 应仅被触发一次
+    barrier = threading.Barrier(4)
+
+    def first_reader():
+        try:
+            barrier.wait(timeout=2.0)
+            collector.read(tail_lines=10)
+        except Exception as e:
+            errors.append(e)
+
+    readers = [threading.Thread(target=first_reader) for _ in range(4)]
+    for t in readers:
+        t.start()
+    for t in readers:
+        t.join(timeout=3.0)
+        assert not t.is_alive()
+    assert not errors
+    assert len(start_calls) == 1
+
+    # 2. stop() 应毫秒级返回，不卡 1.5s 超时
+    t0 = time.monotonic()
+    collector.stop()
+    assert time.monotonic() - t0 < 0.5
+
+    # 3. 并发读日志 + 重连/断连压力测试（验证无 AB-BA 死锁）
+    stop_flag = threading.Event()
+
+    def loop_read():
+        while not stop_flag.is_set():
+            try:
+                collector.read(tail_lines=5)
+            except Exception as e:
+                errors.append(e)
+
+    def loop_toggle():
+        for _ in range(8):
+            try:
+                pm.connect(backend="mock", reconnect=True)
+                pm.disconnect()
+                pm.connect(backend="mock")
+            except Exception as e:
+                errors.append(e)
+        stop_flag.set()
+
+    t_r = threading.Thread(target=loop_read)
+    t_t = threading.Thread(target=loop_toggle)
+    t_r.start()
+    t_t.start()
+    t_t.join(timeout=5.0)
+    stop_flag.set()
+    t_r.join(timeout=5.0)
+    assert not t_t.is_alive() and not t_r.is_alive()
+    assert not errors
+
+    collector.stop()
+    pm.disconnect()

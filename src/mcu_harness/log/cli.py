@@ -31,7 +31,8 @@ def main(argv: list[str] | None = None) -> int:
     ap = argparse.ArgumentParser(prog="mcu-log", description="Non-blocking SEGGER RTT debug log reader")
     ap.add_argument("--device", default=os.environ.get("MCU_HARNESS_DEVICE", "STM32H563ZI"), help="目标芯片型号")
     ap.add_argument("--channel", type=int, default=0, help="RTT 上行通道号，默认 0")
-    ap.add_argument("--block-addr", help="RTT 控制块地址（可选，如 0x20000000）")
+    ap.add_argument("--elf", default=os.environ.get("MCU_HARNESS_ELF_PATH"), help="固件 .elf 路径（自动查找 _SEGGER_RTT 地址）")
+    ap.add_argument("--block-addr", help="RTT 控制块地址（可选，优先于 --elf）")
     ap.add_argument("-n", "--tail", type=int, default=50, help="返回最近 N 行，默认 50")
     ap.add_argument("--pattern", help="按关键词/正则过滤")
     ap.add_argument("--regex", action="store_true", help="将 --pattern 作为正则表达式")
@@ -61,7 +62,9 @@ def main(argv: list[str] | None = None) -> int:
         else:
             pm.connect(backend="jlink", device=args.device)
 
-        collector.start(channel=args.channel, block_address=block_addr)
+        status = collector.start(channel=args.channel, block_address=block_addr, elf_path=args.elf)
+        if not args.json and status.block_address:
+            print(f"[rtt] channel={status.channel} block={status.block_address}", file=sys.stderr)
 
         if args.follow:
             last_seq = 0

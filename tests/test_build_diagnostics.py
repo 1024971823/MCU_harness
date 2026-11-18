@@ -133,3 +133,15 @@ def test_arm_size_berkeley_output():
     assert s.data_bytes == 128
     assert s.bss_bytes == 2048
     assert s.total_bytes == 14516
+
+
+def test_windows_drive_path_linker_error():
+    text = (
+        "C:\\dev\\blinky\\Core\\Src\\main.c:57:(.text.main+0x2a): "
+        "undefined reference to `MX_SPI1_Init'\n"
+    )
+    r = parse_build_output(text, project_dir="C:\\dev\\blinky")
+    assert len(r.errors) == 1
+    assert r.errors[0].category == "linker"
+    assert r.errors[0].file == "Core/Src/main.c"
+    assert r.errors[0].line == 57

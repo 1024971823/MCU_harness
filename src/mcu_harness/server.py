@@ -57,24 +57,27 @@ def build_firmware(
     max_errors: Annotated[int, Field(description="最多返回的错误条数（total_errors 仍统计总数）")] = 10,
     max_warnings: Annotated[int, Field(description="最多返回的警告条数（total_warnings 仍统计总数）")] = 10,
 ) -> dict[str, Any]:
-    result = _run_build_firmware(
-        project_dir=project_dir,
-        build_dir=build_dir,
-        target=target,
-        build_type=build_type,
-        toolchain_file=toolchain_file,
-        generator=generator,
-        extra_cmake_args=extra_cmake_args,
-        clean=clean,
-        reconfigure=reconfigure,
-        jobs=jobs,
-        max_errors=max_errors,
-        max_warnings=max_warnings,
-        build_system=build_system,
-        makefile=makefile,
-        extra_args=extra_args,
-    )
-    return result.to_dict()
+    try:
+        result = _run_build_firmware(
+            project_dir=project_dir,
+            build_dir=build_dir,
+            target=target,
+            build_type=build_type,
+            toolchain_file=toolchain_file,
+            generator=generator,
+            extra_cmake_args=extra_cmake_args,
+            clean=clean,
+            reconfigure=reconfigure,
+            jobs=jobs,
+            max_errors=max_errors,
+            max_warnings=max_warnings,
+            build_system=build_system,
+            makefile=makefile,
+            extra_args=extra_args,
+        )
+        return result.to_dict()
+    except Exception as e:
+        return {"success": False, "stage": "precheck", "error": str(e), "message": str(e)}
 
 
 @mcp.tool(
@@ -157,9 +160,9 @@ def inspect_svd(
 def probe_control(
     action: Annotated[str, Field(description="操作：info / connect / disconnect / halt / resume")] = "info",
     device: Annotated[str | None, Field(description="目标芯片型号（默认读取 MCU_HARNESS_DEVICE 或 STM32H563ZI）")] = None,
-    interface: Annotated[str, Field(description="调试接口：SWD 或 JTAG")] = "SWD",
-    speed: Annotated[str | int, Field(description="接口速率 kHz，或 'auto'")] = "auto",
-    serial_no: Annotated[str | None, Field(description="J-Link 序列号（多探针时使用）")] = None,
+    interface: Annotated[str | None, Field(description="调试接口：SWD 或 JTAG（默认读取 MCU_HARNESS_INTERFACE 或 SWD）")] = None,
+    speed: Annotated[str | int | None, Field(description="接口速率 kHz，或 'auto'（默认读取 MCU_HARNESS_SPEED 或 'auto'）")] = None,
+    serial_no: Annotated[str | None, Field(description="J-Link 序列号（默认读取 MCU_HARNESS_SERIAL）")] = None,
     reconnect: Annotated[bool, Field(description="action=connect 时是否强制重新连接")] = False,
 ) -> dict[str, Any]:
     act = action.strip().lower()
@@ -188,7 +191,7 @@ def probe_control(
                 ok = probe.resume()
                 return {"action": "resume", "halted": probe.is_halted(), "changed": ok}
         return {"error": f"Unknown action {action!r} (expected info/connect/disconnect/halt/resume)"}
-    except ProbeError as e:
+    except Exception as e:
         return {"error": str(e)}
 
 
@@ -209,10 +212,20 @@ def read_memory(
         return {"error": "count must be between 1 and 256"}
     if width not in (8, 16, 32):
         return {"error": "width must be 8, 16, or 32"}
+    if isinstance(address, bool):
+        return {"error": f"Invalid address {address!r}"}
     try:
         addr = int(address, 0) if isinstance(address, str) else int(address)
     except ValueError as e:
         return {"error": f"Invalid address {address!r}: {e}"}
+
+    step = width // 8
+    if addr < 0 or addr > 0xFFFFFFFF or (addr + count * step - 1) > 0xFFFFFFFF:
+        return {"error": f"Address out of 32-bit range (0x00000000..0xFFFFFFFF): {address!r}"}
+    if width == 32 and addr % 4 != 0:
+        return {"error": f"Unaligned 32-bit address 0x{addr:08X} (must be 4-byte aligned)"}
+    if width == 16 and addr % 2 != 0:
+        return {"error": f"Unaligned 16-bit address 0x{addr:08X} (must be 2-byte aligned)"}
 
     try:
         with default_probe_manager.session(device=device) as probe:
@@ -225,7 +238,7 @@ def read_memory(
             else:
                 vals = probe.read_u8(addr, count)
                 hex_vals = [f"0x{v:02X}" for v in vals]
-    except ProbeError as e:
+    except Exception as e:
         return {"error": str(e)}
 
     return {
@@ -267,7 +280,7 @@ def inspect_peripheral(
                 registers=registers,
                 read_all=read_all,
             )
-    except (ProbeError, FileNotFoundError, KeyError, ValueError) as e:
+    except Exception as e:
         return {"error": str(e)}
 
     return res.to_dict()
@@ -289,13 +302,16 @@ def read_debug_log(
     regex: Annotated[bool, Field(description="为 True 时把 pattern 当作正则表达式")] = False,
     context_lines: Annotated[int, Field(description="命中 pattern 时附带的前后上下文行数")] = 2,
     channel: Annotated[int, Field(description="SEGGER RTT 上行通道号，默认 0")] = 0,
-    block_address: Annotated[str | int | None, Field(description="可选 RTT 控制块地址，如 '0x20000000'；默认自动扫描 RAM")] = None,
+    elf_path: Annotated[str | None, Field(description="固件 .elf 路径（用于自动定位 _SEGGER_RTT 控制块地址，跳过全 RAM 扫描）")] = None,
+    block_address: Annotated[str | int | None, Field(description="可选 RTT 控制块地址，如 '0x20005170'；不传则优先查 elf_path")] = None,
     include_partial: Annotated[bool, Field(description="是否附带末尾尚未换行的半行日志")] = True,
     device: Annotated[str | None, Field(description="目标芯片型号（未连接时用于自动连接）")] = None,
 ) -> dict[str, Any]:
     act = action.strip().lower()
     if tail_lines < 1 or tail_lines > 500:
         return {"error": "tail_lines must be between 1 and 500"}
+    if context_lines < 0 or context_lines > 50:
+        return {"error": "context_lines must be between 0 and 50"}
     try:
         addr = int(block_address, 0) if isinstance(block_address, str) else block_address
     except ValueError as e:
@@ -305,7 +321,9 @@ def read_debug_log(
         if act == "status":
             return {"status": default_rtt_collector.status().to_dict()}
         if act == "start":
-            st = default_rtt_collector.start(channel=channel, block_address=addr, device=device)
+            st = default_rtt_collector.start(
+                channel=channel, block_address=addr, elf_path=elf_path, device=device
+            )
             return {"status": st.to_dict()}
         if act == "stop":
             st = default_rtt_collector.stop()
@@ -323,11 +341,12 @@ def read_debug_log(
                 include_partial=include_partial,
                 channel=channel,
                 block_address=addr,
+                elf_path=elf_path,
                 device=device,
             )
             return {"status": st.to_dict(), **res.to_dict()}
         return {"error": f"Unknown action {action!r} (expected read/start/stop/clear/status)"}
-    except (ProbeError, ValueError) as e:
+    except Exception as e:
         return {"error": str(e)}
 
 
