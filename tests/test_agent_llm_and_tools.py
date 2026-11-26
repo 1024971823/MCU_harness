@@ -22,6 +22,7 @@ from mcu_harness.agent.llm import (
     MockLlmProvider,
     OpenAICompatProvider,
     ToolCall,
+    _ThinkTagSplitter,
     create_provider,
 )
 from mcu_harness.agent.registry import ToolContext, build_default_registry
@@ -480,6 +481,318 @@ class TestLlmProvidersAndFactory(unittest.TestCase):
                 ollama = create_provider("ollama")
                 self.assertEqual(ollama.provider_name, "ollama")
                 self.assertEqual(ollama.model, "qwen2.5-coder:14b")
+
+    def test_llm_response_to_dict_includes_reasoning_and_blocks(self) -> None:
+        resp = LlmResponse(
+            text="answer",
+            reasoning="step by step",
+            reasoning_blocks=[{"type": "thinking", "thinking": "step by step", "signature": "sig1"}],
+            model="claude-sonnet-4-20250514",
+            provider="anthropic",
+        )
+        d = resp.to_dict()
+        self.assertEqual(d["reasoning"], "step by step")
+        self.assertEqual(d["reasoning_blocks"], [{"type": "thinking", "thinking": "step by step", "signature": "sig1"}])
+
+    def test_think_tag_splitter_across_chunk_boundaries(self) -> None:
+        text_deltas: list[str] = []
+        reasoning_deltas: list[str] = []
+        splitter = _ThinkTagSplitter(on_text=text_deltas.append, on_reasoning=reasoning_deltas.append)
+
+        # Split opening tag "<think>", closing tag "</think>", and include a false "<t" prefix
+        chunks = [
+            "Intro <t",
+            "here! <thi",
+            "nk>first ",
+            "reason</th",
+            "ink>Middle <thin",
+            "k>second</thin",
+            "k>End<th",
+        ]
+        for ch in chunks:
+            splitter.feed(ch)
+        splitter.finish()
+
+        self.assertEqual("".join(reasoning_deltas), "first reasonsecond")
+        self.assertEqual("".join(text_deltas), "Intro <there! Middle End<th")
+        self.assertEqual(splitter.reasoning, "first reasonsecond")
+        self.assertEqual(splitter.text, "Intro <there! Middle End<th")
+
+    def test_openai_sse_reasoning_content_and_nonstream_think_strip(self) -> None:
+        state = _MockHttpState()
+        sse_chunks = [
+            {"id": "1", "model": "deepseek-reasoner", "choices": [{"index": 0, "delta": {"reasoning_content": "Check SCB "}}]},
+            {"id": "1", "model": "deepseek-reasoner", "choices": [{"index": 0, "delta": {"reasoning": "and CFSR."}}]},
+            {"id": "1", "model": "deepseek-reasoner", "choices": [{"index": 0, "delta": {"content": "<thi"}}]},
+            {"id": "1", "model": "deepseek-reasoner", "choices": [{"index": 0, "delta": {"content": "nk>Extra</think>Done."}}]},
+            {"id": "1", "choices": [{"index": 0, "delta": {}, "finish_reason": "stop"}]},
+        ]
+        sse_body = "".join(f"data: {json.dumps(c)}\n\n" for c in sse_chunks) + "data: [DONE]\n\n"
+
+        def handle(req: dict[str, Any]) -> tuple[int, dict[str, str], bytes]:
+            if req["body"].get("stream"):
+                return 200, {"Content-Type": "text/event-stream"}, sse_body.encode("utf-8")
+            return (
+                200,
+                {"Content-Type": "application/json"},
+                json.dumps(
+                    {
+                        "model": "qwen3",
+                        "choices": [
+                            {
+                                "finish_reason": "stop",
+                                "message": {
+                                    "role": "assistant",
+                                    "reasoning": "Header thought.",
+                                    "content": "<think>Inner thought.</think>Final answer.",
+                                },
+                            }
+                        ],
+                    }
+                ).encode("utf-8"),
+            )
+
+        state.handler_fn = handle
+        server, base = _start_local_http_server(state)
+        try:
+            prov = OpenAICompatProvider(provider_name="deepseek", api_key="ds-key", base_url=f"{base}/v1")
+            r_deltas: list[str] = []
+            t_deltas: list[str] = []
+            resp_stream = prov.complete(
+                [{"role": "user", "content": "Diagnose"}],
+                on_text_delta=t_deltas.append,
+                on_reasoning_delta=r_deltas.append,
+            )
+            self.assertEqual(r_deltas, ["Check SCB ", "and CFSR.", "Extra"])
+            self.assertEqual(t_deltas, ["Done."])
+            self.assertEqual(resp_stream.reasoning, "Check SCB and CFSR.Extra")
+            self.assertEqual(resp_stream.text, "Done.")
+
+            resp_json = prov.complete([{"role": "user", "content": "Diagnose"}])
+            self.assertEqual(resp_json.reasoning, "Header thought.\nInner thought.")
+            self.assertEqual(resp_json.text, "Final answer.")
+        finally:
+            server.shutdown()
+            server.server_close()
+
+    def test_anthropic_sse_thinking_text_tool_use_json_fallback_and_budget(self) -> None:
+        state = _MockHttpState()
+        sse_events = [
+            ("message_start", {"type": "message_start", "message": {"id": "msg_1", "model": "claude-sonnet-4-20250514", "usage": {"input_tokens": 42}}}),
+            ("content_block_start", {"type": "content_block_start", "index": 0, "content_block": {"type": "thinking", "thinking": "", "signature": ""}}),
+            ("content_block_delta", {"type": "content_block_delta", "index": 0, "delta": {"type": "thinking_delta", "thinking": "Inspecting "}}),
+            ("content_block_delta", {"type": "content_block_delta", "index": 0, "delta": {"type": "thinking_delta", "thinking": "CFSR."}}),
+            ("content_block_delta", {"type": "content_block_delta", "index": 0, "delta": {"type": "signature_delta", "signature": "sig_part_1"}}),
+            ("content_block_delta", {"type": "content_block_delta", "index": 0, "delta": {"type": "signature_delta", "signature": "_part_2"}}),
+            ("content_block_stop", {"type": "content_block_stop", "index": 0}),
+            ("content_block_start", {"type": "content_block_start", "index": 1, "content_block": {"type": "text", "text": ""}}),
+            ("content_block_delta", {"type": "content_block_delta", "index": 1, "delta": {"type": "text_delta", "text": "Checking "}}),
+            ("content_block_delta", {"type": "content_block_delta", "index": 1, "delta": {"type": "text_delta", "text": "fault."}}),
+            ("content_block_stop", {"type": "content_block_stop", "index": 1}),
+            ("content_block_start", {"type": "content_block_start", "index": 2, "content_block": {"type": "tool_use", "id": "toolu_9", "name": "diagnose_crash", "input": {}}}),
+            ("content_block_delta", {"type": "content_block_delta", "index": 2, "delta": {"type": "input_json_delta", "partial_json": '{"keep_halted": '}}),
+            ("content_block_delta", {"type": "content_block_delta", "index": 2, "delta": {"type": "input_json_delta", "partial_json": "true}"}}),
+            ("content_block_stop", {"type": "content_block_stop", "index": 2}),
+            ("message_delta", {"type": "message_delta", "delta": {"stop_reason": "tool_use"}, "usage": {"output_tokens": 19}}),
+            ("message_stop", {"type": "message_stop"}),
+        ]
+        sse_body = "".join(f"event: {ev}\ndata: {json.dumps(data)}\n\n" for ev, data in sse_events)
+
+        def handle(req: dict[str, Any]) -> tuple[int, dict[str, str], bytes]:
+            if len(state.requests) == 1:
+                return 200, {"Content-Type": "text/event-stream"}, sse_body.encode("utf-8")
+            # JSON fallback even when stream=True was requested
+            fallback_body = {
+                "id": "msg_2",
+                "model": "claude-sonnet-4-20250514",
+                "stop_reason": "end_turn",
+                "content": [
+                    {"type": "thinking", "thinking": "Fallback thought", "signature": "sig_fb"},
+                    {"type": "text", "text": "Fallback answer"},
+                ],
+                "usage": {"input_tokens": 60, "output_tokens": 12},
+            }
+            return 200, {"Content-Type": "application/json"}, json.dumps(fallback_body).encode("utf-8")
+
+        state.handler_fn = handle
+        server, base = _start_local_http_server(state)
+        try:
+            prov = AnthropicProvider(api_key="anth-key", base_url=base, thinking_budget=2048)
+            r_deltas: list[str] = []
+            t_deltas: list[str] = []
+            r1 = prov.complete(
+                [{"role": "user", "content": "Diagnose crash"}],
+                temperature=0.2,
+                max_tokens=1024,
+                on_text_delta=t_deltas.append,
+                on_reasoning_delta=r_deltas.append,
+            )
+            req1_body = state.requests[0]["body"]
+            self.assertTrue(req1_body["stream"])
+            self.assertEqual(req1_body["thinking"], {"type": "enabled", "budget_tokens": 2048})
+            self.assertEqual(req1_body["temperature"], 1)
+            self.assertEqual(req1_body["max_tokens"], 3072)
+
+            self.assertEqual(r_deltas, ["Inspecting ", "CFSR."])
+            self.assertEqual(t_deltas, ["Checking ", "fault."])
+            self.assertEqual(r1.reasoning, "Inspecting CFSR.")
+            self.assertEqual(r1.text, "Checking fault.")
+            self.assertEqual(
+                r1.reasoning_blocks,
+                [{"type": "thinking", "thinking": "Inspecting CFSR.", "signature": "sig_part_1_part_2"}],
+            )
+            self.assertEqual(r1.finish_reason, "tool_calls")
+            self.assertEqual(r1.tool_calls, [ToolCall(id="toolu_9", name="diagnose_crash", arguments={"keep_halted": True})])
+            self.assertEqual(r1.usage, {"prompt_tokens": 42, "completion_tokens": 19, "total_tokens": 61})
+
+            # Roundtrip: reasoning_blocks must be placed FIRST in assistant content array
+            r_fb: list[str] = []
+            t_fb: list[str] = []
+            events_order: list[tuple[str, str]] = []
+            r2 = prov.complete(
+                [
+                    {"role": "user", "content": "Diagnose crash"},
+                    {
+                        "role": "assistant",
+                        "content": r1.text,
+                        "reasoning_blocks": r1.reasoning_blocks,
+                        "tool_calls": [tc.to_dict() for tc in r1.tool_calls],
+                    },
+                    {"role": "tool", "tool_call_id": "toolu_9", "name": "diagnose_crash", "content": '{"ok": true}'},
+                ],
+                on_text_delta=lambda d: (t_fb.append(d), events_order.append(("text", d)))[0],
+                on_reasoning_delta=lambda d: (r_fb.append(d), events_order.append(("reasoning", d)))[0],
+            )
+            req2_msgs = state.requests[1]["body"]["messages"]
+            self.assertEqual(req2_msgs[1]["content"][0]["type"], "thinking")
+            self.assertEqual(req2_msgs[1]["content"][0]["signature"], "sig_part_1_part_2")
+            self.assertEqual(req2_msgs[1]["content"][1]["type"], "text")
+            self.assertEqual(req2_msgs[1]["content"][2]["type"], "tool_use")
+            self.assertEqual(r_fb, ["Fallback thought"])
+            self.assertEqual(t_fb, ["Fallback answer"])
+            self.assertEqual(events_order, [("reasoning", "Fallback thought"), ("text", "Fallback answer")])
+            self.assertEqual(r2.reasoning_blocks[0]["signature"], "sig_fb")
+        finally:
+            server.shutdown()
+            server.server_close()
+
+        # create_provider thinking_budget config & env precedence
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            proj = root / "proj"
+            proj.mkdir()
+            fake_home = root / "home"
+            user_cfg_dir = fake_home / ".config" / "mcu-harness"
+            user_cfg_dir.mkdir(parents=True)
+            (proj / "mcu-harness.toml").write_text(
+                '[agent]\nprovider = "anthropic"\napi_key = "k1"\nthinking_budget = 4096\n',
+                encoding="utf-8",
+            )
+            with mock.patch.dict(os.environ, {"MCU_AGENT_THINKING_BUDGET": "1024"}, clear=False), mock.patch.object(
+                Path, "home", return_value=fake_home
+            ):
+                p_proj = create_provider(project_dir=str(proj))
+                self.assertIsInstance(p_proj, AnthropicProvider)
+                assert isinstance(p_proj, AnthropicProvider)
+                self.assertEqual(p_proj.thinking_budget, 4096)
+
+                p_env = create_provider("anthropic", api_key="k2")
+                assert isinstance(p_env, AnthropicProvider)
+                self.assertEqual(p_env.thinking_budget, 1024)
+
+    def test_gemini_sse_thought_parts_and_json_fallback(self) -> None:
+        state = _MockHttpState()
+        sse_chunks = [
+            {"modelVersion": "gemini-2.5-flash", "candidates": [{"content": {"parts": [{"text": "Let me think. ", "thought": True}]}}]},
+            {"candidates": [{"content": {"parts": [{"text": "Checking RCC.", "thought": True}, {"text": "Clock is "}]}}]},
+            {
+                "candidates": [
+                    {
+                        "finishReason": "STOP",
+                        "content": {"parts": [{"text": "enabled."}]},
+                    }
+                ],
+                "usageMetadata": {"promptTokenCount": 10, "candidatesTokenCount": 8, "totalTokenCount": 18},
+            },
+        ]
+        sse_body = "".join(f"data: {json.dumps(c)}\n\n" for c in sse_chunks)
+
+        def handle(req: dict[str, Any]) -> tuple[int, dict[str, str], bytes]:
+            if len(state.requests) == 1:
+                return 200, {"Content-Type": "text/event-stream"}, sse_body.encode("utf-8")
+            fallback_body = {
+                "candidates": [
+                    {
+                        "finishReason": "STOP",
+                        "content": {
+                            "parts": [
+                                {"text": "JSON thought.", "thought": True},
+                                {"text": "JSON answer."},
+                            ]
+                        },
+                    }
+                ]
+            }
+            return 200, {"Content-Type": "application/json"}, json.dumps(fallback_body).encode("utf-8")
+
+        state.handler_fn = handle
+        server, base = _start_local_http_server(state)
+        try:
+            prov = GeminiProvider(model="gemini-2.5-flash", api_key="gem-key", base_url=base)
+            r_deltas: list[str] = []
+            t_deltas: list[str] = []
+            r1 = prov.complete(
+                [{"role": "user", "content": "Check clock"}],
+                on_text_delta=t_deltas.append,
+                on_reasoning_delta=r_deltas.append,
+            )
+            req1 = state.requests[0]
+            self.assertEqual(req1["path"], "/v1beta/models/gemini-2.5-flash:streamGenerateContent?alt=sse")
+            self.assertEqual(req1["body"]["generationConfig"]["thinkingConfig"], {"includeThoughts": True})
+            self.assertEqual(r_deltas, ["Let me think. ", "Checking RCC."])
+            self.assertEqual(t_deltas, ["Clock is ", "enabled."])
+            self.assertEqual(r1.reasoning, "Let me think. Checking RCC.")
+            self.assertEqual(r1.text, "Clock is enabled.")
+            self.assertEqual(r1.usage, {"prompt_tokens": 10, "completion_tokens": 8, "total_tokens": 18})
+
+            events_order: list[tuple[str, str]] = []
+            r2 = prov.complete(
+                [{"role": "user", "content": "Fallback"}],
+                on_text_delta=lambda d: events_order.append(("text", d)),
+                on_reasoning_delta=lambda d: events_order.append(("reasoning", d)),
+            )
+            self.assertEqual(events_order, [("reasoning", "JSON thought."), ("text", "JSON answer.")])
+            self.assertEqual(r2.reasoning, "JSON thought.")
+            self.assertEqual(r2.text, "JSON answer.")
+        finally:
+            server.shutdown()
+            server.server_close()
+
+    def test_mock_provider_chunked_streaming(self) -> None:
+        prov = MockLlmProvider(
+            [LlmResponse(reasoning="Think123", text="Answer45")],
+            stream_chunk_chars=3,
+            stream_chunk_delay_s=0.0,
+        )
+        events: list[tuple[str, str]] = []
+        resp = prov.complete(
+            [{"role": "user", "content": "hi"}],
+            on_reasoning_delta=lambda d: events.append(("reasoning", d)),
+            on_text_delta=lambda d: events.append(("text", d)),
+        )
+        self.assertEqual(resp.reasoning, "Think123")
+        self.assertEqual(resp.text, "Answer45")
+        self.assertEqual(
+            events,
+            [
+                ("reasoning", "Thi"),
+                ("reasoning", "nk1"),
+                ("reasoning", "23"),
+                ("text", "Ans"),
+                ("text", "wer"),
+                ("text", "45"),
+            ],
+        )
 
 
 class TestWorkspaceTools(unittest.TestCase):

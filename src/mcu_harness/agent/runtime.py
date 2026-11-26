@@ -11,6 +11,7 @@
 
 from __future__ import annotations
 
+import inspect
 import json
 import threading
 import time
@@ -362,6 +363,22 @@ class AgentRuntime:
             return TurnResult(text="Bye.", aborted=True)
         return TurnResult(text=f"Unsupported meta command: /{cmd}")
 
+    def _provider_supports_reasoning_delta(self, provider: LlmProvider) -> bool:
+        cached = getattr(self, "_cached_reasoning_cap", None)
+        if cached is not None and cached[0] is provider:
+            return bool(cached[1])
+        supports = False
+        try:
+            sig = inspect.signature(provider.complete)
+            for name, param in sig.parameters.items():
+                if name == "on_reasoning_delta" or param.kind == inspect.Parameter.VAR_KEYWORD:
+                    supports = True
+                    break
+        except (TypeError, ValueError):
+            supports = False
+        self._cached_reasoning_cap = (provider, supports)
+        return supports
+
     def request_cancel(self) -> None:
         """请求取消当前正在执行的对话轮次。"""
         self._cancel_event.set()
@@ -419,6 +436,17 @@ class AgentRuntime:
                 self._emit("llm_request", {"step": steps, "provider": self.provider.provider_name, "model": self.provider.model})
 
                 partial_deltas: list[str] = []
+                partial_reasoning: list[str] = []
+
+                def _on_reasoning_delta(
+                    delta: str,
+                    _step: int = steps,
+                    _buf: list[str] = partial_reasoning,
+                ) -> None:
+                    if self._cancel_event.is_set():
+                        raise _TurnCancelled()
+                    _buf.append(delta)
+                    self._emit("reasoning_delta", {"step": _step, "delta": delta})
 
                 def _on_text_delta(delta: str, _step: int = steps, _buf: list[str] = partial_deltas) -> None:
                     if self._cancel_event.is_set():
@@ -427,16 +455,24 @@ class AgentRuntime:
                     self._emit("text_delta", {"step": _step, "delta": delta})
 
                 try:
+                    complete_kwargs: dict[str, Any] = {
+                        "system": system_prompt,
+                        "tools": llm_tools,
+                        "on_text_delta": _on_text_delta,
+                    }
+                    if self._provider_supports_reasoning_delta(self.provider):
+                        complete_kwargs["on_reasoning_delta"] = _on_reasoning_delta
                     resp = self.provider.complete(
                         self.messages,
-                        system=system_prompt,
-                        tools=llm_tools,
-                        on_text_delta=_on_text_delta,
+                        **complete_kwargs,
                     )
                 except _TurnCancelled:
-                    if partial_deltas:
+                    if partial_deltas or partial_reasoning:
                         final_text = "".join(partial_deltas)
-                        self._record_message({"role": "assistant", "content": final_text})
+                        cancel_msg: dict[str, Any] = {"role": "assistant", "content": final_text}
+                        if partial_reasoning:
+                            cancel_msg["reasoning"] = "".join(partial_reasoning)
+                        self._record_message(cancel_msg)
                     cancelled = True
                     break
                 except LlmError as exc:
@@ -456,15 +492,28 @@ class AgentRuntime:
                         total_usage[k] = total_usage.get(k, 0) + v
 
                 if self._cancel_event.is_set():
-                    if resp.text:
-                        final_text = resp.text
-                        self._record_message({"role": "assistant", "content": resp.text})
+                    reasoning_val = getattr(resp, "reasoning", "") or "".join(partial_reasoning)
+                    reasoning_blocks_val = getattr(resp, "reasoning_blocks", None) or []
+                    if resp.text or reasoning_val or reasoning_blocks_val:
+                        final_text = resp.text or ""
+                        cancel_msg = {"role": "assistant", "content": final_text}
+                        if reasoning_val:
+                            cancel_msg["reasoning"] = reasoning_val
+                        if reasoning_blocks_val:
+                            cancel_msg["reasoning_blocks"] = [dict(b) for b in reasoning_blocks_val]
+                        self._record_message(cancel_msg)
                     cancelled = True
                     break
 
                 assistant_msg: dict[str, Any] = {"role": "assistant", "content": resp.text or ""}
                 if resp.tool_calls:
                     assistant_msg["tool_calls"] = [tc.to_dict() for tc in resp.tool_calls]
+                reasoning_val = getattr(resp, "reasoning", "") or "".join(partial_reasoning)
+                if reasoning_val:
+                    assistant_msg["reasoning"] = reasoning_val
+                reasoning_blocks_val = getattr(resp, "reasoning_blocks", None) or []
+                if reasoning_blocks_val:
+                    assistant_msg["reasoning_blocks"] = [dict(b) for b in reasoning_blocks_val]
                 self._record_message(assistant_msg)
                 final_text = resp.text or ""
 

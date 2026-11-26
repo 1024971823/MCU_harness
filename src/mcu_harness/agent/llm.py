@@ -17,6 +17,7 @@ from __future__ import annotations
 
 import json
 import os
+import time
 import urllib.error
 import urllib.request
 from abc import ABC, abstractmethod
@@ -57,6 +58,8 @@ class LlmResponse:
     usage: dict[str, int] = field(default_factory=dict)
     model: str = ""
     provider: str = ""
+    reasoning: str = ""
+    reasoning_blocks: list[dict[str, Any]] = field(default_factory=list)
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -66,6 +69,8 @@ class LlmResponse:
             "usage": dict(self.usage),
             "model": self.model,
             "provider": self.provider,
+            "reasoning": self.reasoning,
+            "reasoning_blocks": [dict(b) for b in self.reasoning_blocks],
         }
 
 
@@ -85,6 +90,7 @@ class LlmProvider(ABC):
         temperature: float = 0.2,
         max_tokens: int = 4096,
         on_text_delta: Callable[[str], None] | None = None,
+        on_reasoning_delta: Callable[[str], None] | None = None,
     ) -> LlmResponse:
         """执行一次补全请求并返回统一格式的 `LlmResponse`。"""
 
@@ -251,6 +257,97 @@ OPENAI_COMPAT_PRESETS: dict[str, dict[str, Any]] = {
 }
 
 
+class _ThinkTagSplitter:
+    """将文本流中的 `<think>...</think>` 剥离并路由到推理回调，支持标签跨分片边界切分。"""
+
+    _OPEN_TAG = "<think>"
+    _CLOSE_TAG = "</think>"
+
+    def __init__(
+        self,
+        *,
+        on_text: Callable[[str], None] | None = None,
+        on_reasoning: Callable[[str], None] | None = None,
+    ) -> None:
+        self._on_text = on_text
+        self._on_reasoning = on_reasoning
+        self._in_think = False
+        self._buf = ""
+        self.text_parts: list[str] = []
+        self.reasoning_parts: list[str] = []
+
+    def _emit_text(self, chunk: str) -> None:
+        if not chunk:
+            return
+        self.text_parts.append(chunk)
+        if self._on_text is not None:
+            self._on_text(chunk)
+
+    def _emit_reasoning(self, chunk: str) -> None:
+        if not chunk:
+            return
+        self.reasoning_parts.append(chunk)
+        if self._on_reasoning is not None:
+            self._on_reasoning(chunk)
+
+    @staticmethod
+    def _trailing_prefix_len(buf: str, tag: str) -> int:
+        max_k = min(len(buf), len(tag) - 1)
+        for k in range(max_k, 0, -1):
+            if buf.endswith(tag[:k]):
+                return k
+        return 0
+
+    def feed(self, chunk: str) -> None:
+        if not chunk:
+            return
+        self._buf += chunk
+        while self._buf:
+            if not self._in_think:
+                idx = self._buf.find(self._OPEN_TAG)
+                if idx != -1:
+                    self._emit_text(self._buf[:idx])
+                    self._buf = self._buf[idx + len(self._OPEN_TAG) :]
+                    self._in_think = True
+                    continue
+                hold = self._trailing_prefix_len(self._buf, self._OPEN_TAG)
+                emit_len = len(self._buf) - hold
+                if emit_len > 0:
+                    self._emit_text(self._buf[:emit_len])
+                    self._buf = self._buf[emit_len:]
+                break
+            else:
+                idx = self._buf.find(self._CLOSE_TAG)
+                if idx != -1:
+                    self._emit_reasoning(self._buf[:idx])
+                    self._buf = self._buf[idx + len(self._CLOSE_TAG) :]
+                    self._in_think = False
+                    continue
+                hold = self._trailing_prefix_len(self._buf, self._CLOSE_TAG)
+                emit_len = len(self._buf) - hold
+                if emit_len > 0:
+                    self._emit_reasoning(self._buf[:emit_len])
+                    self._buf = self._buf[emit_len:]
+                break
+
+    def finish(self) -> None:
+        if not self._buf:
+            return
+        if self._in_think:
+            self._emit_reasoning(self._buf)
+        else:
+            self._emit_text(self._buf)
+        self._buf = ""
+
+    @property
+    def text(self) -> str:
+        return "".join(self.text_parts)
+
+    @property
+    def reasoning(self) -> str:
+        return "".join(self.reasoning_parts)
+
+
 class OpenAICompatProvider(LlmProvider):
     """OpenAI Chat Completions 兼容路由（支持非流式 JSON 与 SSE 流式分片解析）。"""
 
@@ -321,7 +418,24 @@ class OpenAICompatProvider(LlmProvider):
             raise LlmError(f"{self.provider_name} response missing 'choices': {data}")
         choice = choices[0] or {}
         message = choice.get("message") or {}
-        text = str(message.get("content") or "")
+        raw_text = str(message.get("content") or "")
+
+        raw_reasoning = message.get("reasoning_content")
+        if not isinstance(raw_reasoning, str) or not raw_reasoning:
+            raw_reasoning = message.get("reasoning")
+        explicit_reasoning = str(raw_reasoning) if isinstance(raw_reasoning, str) and raw_reasoning else ""
+
+        splitter = _ThinkTagSplitter()
+        if raw_text:
+            splitter.feed(raw_text)
+        splitter.finish()
+        text = splitter.text
+        tag_reasoning = splitter.reasoning
+        if explicit_reasoning and tag_reasoning:
+            sep = "" if explicit_reasoning.endswith("\n") else "\n"
+            reasoning = f"{explicit_reasoning}{sep}{tag_reasoning}"
+        else:
+            reasoning = explicit_reasoning or tag_reasoning
 
         tool_calls: list[ToolCall] = []
         for idx, raw_tc in enumerate(message.get("tool_calls") or []):
@@ -341,6 +455,7 @@ class OpenAICompatProvider(LlmProvider):
             usage=usage,
             model=model_name,
             provider=self.provider_name,
+            reasoning=reasoning,
         )
 
     def _complete_streaming(
@@ -348,16 +463,30 @@ class OpenAICompatProvider(LlmProvider):
         url: str,
         payload: dict[str, Any],
         headers: dict[str, str],
-        on_text_delta: Callable[[str], None],
+        on_text_delta: Callable[[str], None] | None = None,
+        on_reasoning_delta: Callable[[str], None] | None = None,
     ) -> LlmResponse:
         body = json.dumps(payload, ensure_ascii=False).encode("utf-8")
         req = urllib.request.Request(url, data=body, headers=headers, method="POST")
 
         text_parts: list[str] = []
+        reasoning_parts: list[str] = []
         tool_call_acc: dict[int, dict[str, Any]] = {}
         finish_reason: str | None = None
         usage: dict[str, int] = {}
         model_name = self.model
+
+        def _emit_text(delta: str) -> None:
+            text_parts.append(delta)
+            if on_text_delta is not None:
+                on_text_delta(delta)
+
+        def _emit_reasoning(delta: str) -> None:
+            reasoning_parts.append(delta)
+            if on_reasoning_delta is not None:
+                on_reasoning_delta(delta)
+
+        splitter = _ThinkTagSplitter(on_text=_emit_text, on_reasoning=_emit_reasoning)
 
         try:
             with urllib.request.urlopen(req, timeout=self.timeout_s) as resp:
@@ -366,7 +495,9 @@ class OpenAICompatProvider(LlmProvider):
                     raw = resp.read().decode("utf-8", errors="replace")
                     parsed = json.loads(raw)
                     result = self._parse_json_response(parsed)
-                    if result.text:
+                    if on_reasoning_delta is not None and result.reasoning:
+                        on_reasoning_delta(result.reasoning)
+                    if on_text_delta is not None and result.text:
                         on_text_delta(result.text)
                     return result
 
@@ -395,10 +526,15 @@ class OpenAICompatProvider(LlmProvider):
                         finish_reason = str(choice["finish_reason"])
 
                     delta = choice.get("delta") or {}
+                    r_delta = delta.get("reasoning_content")
+                    if not isinstance(r_delta, str) or not r_delta:
+                        r_delta = delta.get("reasoning")
+                    if isinstance(r_delta, str) and r_delta:
+                        _emit_reasoning(r_delta)
+
                     delta_content = delta.get("content")
                     if isinstance(delta_content, str) and delta_content:
-                        text_parts.append(delta_content)
-                        on_text_delta(delta_content)
+                        splitter.feed(delta_content)
 
                     for tc_delta in delta.get("tool_calls") or []:
                         idx = int(tc_delta.get("index", 0))
@@ -413,6 +549,7 @@ class OpenAICompatProvider(LlmProvider):
                             slot["name"] += str(fn["name"])
                         if fn.get("arguments") is not None:
                             slot["arguments_parts"].append(str(fn["arguments"]))
+                splitter.finish()
         except urllib.error.HTTPError as exc:
             err_body = ""
             try:
@@ -440,6 +577,7 @@ class OpenAICompatProvider(LlmProvider):
             usage=usage,
             model=model_name,
             provider=self.provider_name,
+            reasoning="".join(reasoning_parts),
         )
 
     def complete(
@@ -451,11 +589,13 @@ class OpenAICompatProvider(LlmProvider):
         temperature: float = 0.2,
         max_tokens: int = 4096,
         on_text_delta: Callable[[str], None] | None = None,
+        on_reasoning_delta: Callable[[str], None] | None = None,
     ) -> LlmResponse:
         url = f"{self.base_url}/chat/completions"
+        stream_requested = on_text_delta is not None or on_reasoning_delta is not None
         headers: dict[str, str] = {
             "Content-Type": "application/json",
-            "Accept": "text/event-stream, application/json" if on_text_delta else "application/json",
+            "Accept": "text/event-stream, application/json" if stream_requested else "application/json",
         }
         if self.api_key:
             headers["Authorization"] = f"Bearer {self.api_key}"
@@ -474,9 +614,15 @@ class OpenAICompatProvider(LlmProvider):
                 }
                 for t in tools
             ]
-        if on_text_delta is not None:
+        if stream_requested:
             payload["stream"] = True
-            return self._complete_streaming(url, payload, headers, on_text_delta)
+            return self._complete_streaming(
+                url,
+                payload,
+                headers,
+                on_text_delta=on_text_delta,
+                on_reasoning_delta=on_reasoning_delta,
+            )
 
         data = _http_post_json(url, payload, headers, timeout_s=self.timeout_s, provider_name=self.provider_name)
         return self._parse_json_response(data)
@@ -501,6 +647,7 @@ class AnthropicProvider(LlmProvider):
         api_key: str | None = None,
         base_url: str | None = None,
         timeout_s: float = 120.0,
+        thinking_budget: int = 0,
     ) -> None:
         self.provider_name = "anthropic"
         self.model = model or self.DEFAULT_MODEL
@@ -510,6 +657,7 @@ class AnthropicProvider(LlmProvider):
             raw_base = raw_base[:-3]
         self.base_url = raw_base
         self.timeout_s = float(timeout_s)
+        self.thinking_budget = max(0, int(thinking_budget))
 
     def _build_messages(self, messages: list[dict[str, Any]], system: str) -> tuple[str, list[dict[str, Any]]]:
         sys_parts: list[str] = [system] if system else []
@@ -539,6 +687,9 @@ class AnthropicProvider(LlmProvider):
                     out.append({"role": "user", "content": txt})
             elif role == "assistant":
                 blocks: list[dict[str, Any]] = []
+                for rb in msg.get("reasoning_blocks") or []:
+                    if isinstance(rb, dict) and rb.get("type") in ("thinking", "redacted_thinking"):
+                        blocks.append(dict(rb))
                 txt = msg.get("content")
                 if isinstance(txt, str) and txt:
                     blocks.append({"type": "text", "text": txt})
@@ -570,6 +721,263 @@ class AnthropicProvider(LlmProvider):
 
         return "\n\n".join(p for p in sys_parts if p), out
 
+    @staticmethod
+    def _map_finish_reason(raw_stop: str) -> str:
+        finish_map = {
+            "end_turn": "stop",
+            "stop_sequence": "stop",
+            "tool_use": "tool_calls",
+            "max_tokens": "length",
+        }
+        return finish_map.get(raw_stop, raw_stop)
+
+    @staticmethod
+    def _build_usage(in_tok: int | None, out_tok: int | None) -> dict[str, int]:
+        usage: dict[str, int] = {}
+        if isinstance(in_tok, int):
+            usage["prompt_tokens"] = in_tok
+        if isinstance(out_tok, int):
+            usage["completion_tokens"] = out_tok
+        if "prompt_tokens" in usage and "completion_tokens" in usage:
+            usage["total_tokens"] = usage["prompt_tokens"] + usage["completion_tokens"]
+        return usage
+
+    def _parse_json_response(self, data: dict[str, Any]) -> LlmResponse:
+        text_parts: list[str] = []
+        reasoning_parts: list[str] = []
+        reasoning_blocks: list[dict[str, Any]] = []
+        tool_calls: list[ToolCall] = []
+
+        for idx, block in enumerate(data.get("content") or []):
+            if not isinstance(block, dict):
+                continue
+            btype = block.get("type")
+            if btype == "thinking":
+                t_text = str(block.get("thinking") or "")
+                sig = str(block.get("signature") or "")
+                if t_text:
+                    reasoning_parts.append(t_text)
+                reasoning_blocks.append({"type": "thinking", "thinking": t_text, "signature": sig})
+            elif btype == "redacted_thinking":
+                reasoning_blocks.append(dict(block))
+            elif btype == "text":
+                text_parts.append(str(block.get("text") or ""))
+            elif btype == "tool_use":
+                tc_name = str(block.get("name") or "")
+                tc_id = str(block.get("id") or f"toolu_{idx}")
+                raw_input = block.get("input")
+                args = dict(raw_input) if isinstance(raw_input, dict) else {}
+                tool_calls.append(ToolCall(id=tc_id, name=tc_name, arguments=args))
+
+        text = "".join(text_parts)
+        reasoning = "".join(reasoning_parts)
+        raw_stop = str(data.get("stop_reason") or ("tool_use" if tool_calls else "end_turn"))
+        finish_reason = self._map_finish_reason(raw_stop)
+
+        raw_usage = data.get("usage") or {}
+        in_tok = raw_usage.get("input_tokens") if isinstance(raw_usage, dict) else None
+        out_tok = raw_usage.get("output_tokens") if isinstance(raw_usage, dict) else None
+        usage = self._build_usage(in_tok, out_tok)
+
+        return LlmResponse(
+            text=text,
+            tool_calls=tool_calls,
+            finish_reason=finish_reason,
+            usage=usage,
+            model=str(data.get("model") or self.model),
+            provider=self.provider_name,
+            reasoning=reasoning,
+            reasoning_blocks=reasoning_blocks,
+        )
+
+    def _complete_streaming(
+        self,
+        url: str,
+        payload: dict[str, Any],
+        headers: dict[str, str],
+        *,
+        on_text_delta: Callable[[str], None] | None = None,
+        on_reasoning_delta: Callable[[str], None] | None = None,
+    ) -> LlmResponse:
+        body = json.dumps(payload, ensure_ascii=False).encode("utf-8")
+        req = urllib.request.Request(url, data=body, headers=headers, method="POST")
+
+        text_parts: list[str] = []
+        reasoning_parts: list[str] = []
+        blocks_acc: dict[int, dict[str, Any]] = {}
+        raw_stop: str | None = None
+        in_tok: int | None = None
+        out_tok: int | None = None
+        model_name = self.model
+        current_event = ""
+
+        try:
+            with urllib.request.urlopen(req, timeout=self.timeout_s) as resp:
+                content_type = (resp.headers.get("Content-Type") or "").lower()
+                if "application/json" in content_type and "text/event-stream" not in content_type:
+                    raw = resp.read().decode("utf-8", errors="replace")
+                    parsed = json.loads(raw)
+                    result = self._parse_json_response(parsed)
+                    if on_reasoning_delta is not None and result.reasoning:
+                        on_reasoning_delta(result.reasoning)
+                    if on_text_delta is not None and result.text:
+                        on_text_delta(result.text)
+                    return result
+
+                for raw_line in resp:
+                    line = raw_line.decode("utf-8", errors="replace").strip()
+                    if not line:
+                        current_event = ""
+                        continue
+                    if line.startswith(":"):
+                        continue
+                    if line.startswith("event:"):
+                        current_event = line[6:].strip()
+                        continue
+                    if not line.startswith("data:"):
+                        continue
+                    data_str = line[5:].strip()
+                    if data_str == "[DONE]":
+                        break
+                    try:
+                        ev = json.loads(data_str)
+                    except json.JSONDecodeError as exc:
+                        raise LlmError(f"{self.provider_name} SSE chunk invalid JSON: {exc} ({data_str[:200]})") from exc
+
+                    ev_type = str(ev.get("type") or current_event)
+                    if ev_type == "message_start":
+                        msg = ev.get("message") or {}
+                        if msg.get("model"):
+                            model_name = str(msg["model"])
+                        u = msg.get("usage") or {}
+                        if isinstance(u.get("input_tokens"), int):
+                            in_tok = u["input_tokens"]
+                        if isinstance(u.get("output_tokens"), int):
+                            out_tok = u["output_tokens"]
+                    elif ev_type == "content_block_start":
+                        idx = int(ev.get("index", 0))
+                        cb = ev.get("content_block") or {}
+                        btype = str(cb.get("type") or "")
+                        if btype == "thinking":
+                            init_t = str(cb.get("thinking") or "")
+                            init_s = str(cb.get("signature") or "")
+                            blocks_acc[idx] = {
+                                "type": "thinking",
+                                "thinking_parts": [init_t] if init_t else [],
+                                "sig_parts": [init_s] if init_s else [],
+                            }
+                            if init_t:
+                                reasoning_parts.append(init_t)
+                                if on_reasoning_delta is not None:
+                                    on_reasoning_delta(init_t)
+                        elif btype == "redacted_thinking":
+                            blocks_acc[idx] = {"type": "redacted_thinking", "block": dict(cb)}
+                        elif btype == "text":
+                            init_txt = str(cb.get("text") or "")
+                            blocks_acc[idx] = {"type": "text"}
+                            if init_txt:
+                                text_parts.append(init_txt)
+                                if on_text_delta is not None:
+                                    on_text_delta(init_txt)
+                        elif btype == "tool_use":
+                            init_in = cb.get("input")
+                            blocks_acc[idx] = {
+                                "type": "tool_use",
+                                "id": str(cb.get("id") or f"toolu_{idx}"),
+                                "name": str(cb.get("name") or ""),
+                                "json_parts": [],
+                                "init_input": dict(init_in) if isinstance(init_in, dict) and init_in else None,
+                            }
+                    elif ev_type == "content_block_delta":
+                        idx = int(ev.get("index", 0))
+                        delta = ev.get("delta") or {}
+                        dtype = str(delta.get("type") or "")
+                        slot = blocks_acc.setdefault(idx, {"type": "text"})
+                        if dtype == "text_delta":
+                            txt = delta.get("text")
+                            if isinstance(txt, str) and txt:
+                                text_parts.append(txt)
+                                if on_text_delta is not None:
+                                    on_text_delta(txt)
+                        elif dtype == "thinking_delta":
+                            th = delta.get("thinking")
+                            if isinstance(th, str) and th:
+                                slot.setdefault("thinking_parts", []).append(th)
+                                reasoning_parts.append(th)
+                                if on_reasoning_delta is not None:
+                                    on_reasoning_delta(th)
+                        elif dtype == "signature_delta":
+                            sig = delta.get("signature")
+                            if isinstance(sig, str) and sig:
+                                slot.setdefault("sig_parts", []).append(sig)
+                        elif dtype == "input_json_delta":
+                            pj = delta.get("partial_json")
+                            if isinstance(pj, str):
+                                slot.setdefault("json_parts", []).append(pj)
+                    elif ev_type == "content_block_stop":
+                        pass
+                    elif ev_type == "message_delta":
+                        d = ev.get("delta") or {}
+                        if d.get("stop_reason"):
+                            raw_stop = str(d["stop_reason"])
+                        u = ev.get("usage") or {}
+                        if isinstance(u.get("input_tokens"), int):
+                            in_tok = u["input_tokens"]
+                        if isinstance(u.get("output_tokens"), int):
+                            out_tok = u["output_tokens"]
+                    elif ev_type == "message_stop":
+                        break
+                    elif ev_type == "error":
+                        err_obj = ev.get("error") or ev
+                        err_msg = err_obj.get("message") if isinstance(err_obj, dict) else str(err_obj)
+                        raise LlmError(f"{self.provider_name} SSE error: {err_msg or ev}")
+        except urllib.error.HTTPError as exc:
+            err_body = ""
+            try:
+                err_body = exc.read().decode("utf-8", errors="replace").strip()
+            except Exception:
+                pass
+            raise LlmError(f"{self.provider_name} HTTP {exc.code} from {url}: {err_body or exc.reason}") from exc
+        except (urllib.error.URLError, TimeoutError, OSError) as exc:
+            raise LlmError(f"{self.provider_name} streaming request failed ({url}): {exc}") from exc
+
+        reasoning_blocks: list[dict[str, Any]] = []
+        tool_calls: list[ToolCall] = []
+        for idx in sorted(blocks_acc.keys()):
+            slot = blocks_acc[idx]
+            stype = slot.get("type")
+            if stype == "thinking":
+                reasoning_blocks.append(
+                    {
+                        "type": "thinking",
+                        "thinking": "".join(slot.get("thinking_parts", [])),
+                        "signature": "".join(slot.get("sig_parts", [])),
+                    }
+                )
+            elif stype == "redacted_thinking":
+                reasoning_blocks.append(dict(slot["block"]))
+            elif stype == "tool_use":
+                raw_json = "".join(slot.get("json_parts", []))
+                if raw_json.strip():
+                    args = _parse_json_arguments(
+                        raw_json, provider_name=self.provider_name, tool_name=slot["name"]
+                    )
+                else:
+                    args = dict(slot.get("init_input") or {})
+                tool_calls.append(ToolCall(id=slot["id"], name=slot["name"], arguments=args))
+
+        resolved_stop = raw_stop or ("tool_use" if tool_calls else "end_turn")
+        return LlmResponse(
+            text="".join(text_parts),
+            tool_calls=tool_calls,
+            finish_reason=self._map_finish_reason(resolved_stop),
+            usage=self._build_usage(in_tok, out_tok),
+            model=model_name,
+            provider=self.provider_name,
+            reasoning="".join(reasoning_parts),
+            reasoning_blocks=reasoning_blocks,
+        )
+
     def complete(
         self,
         messages: list[dict[str, Any]],
@@ -579,10 +987,13 @@ class AnthropicProvider(LlmProvider):
         temperature: float = 0.2,
         max_tokens: int = 4096,
         on_text_delta: Callable[[str], None] | None = None,
+        on_reasoning_delta: Callable[[str], None] | None = None,
     ) -> LlmResponse:
         url = f"{self.base_url}/v1/messages"
+        stream_requested = on_text_delta is not None or on_reasoning_delta is not None
         headers = {
             "Content-Type": "application/json",
+            "Accept": "text/event-stream, application/json" if stream_requested else "application/json",
             "x-api-key": self.api_key,
             "anthropic-version": self.ANTHROPIC_VERSION,
         }
@@ -593,6 +1004,10 @@ class AnthropicProvider(LlmProvider):
             "temperature": temperature,
             "messages": anth_messages,
         }
+        if self.thinking_budget > 0:
+            payload["thinking"] = {"type": "enabled", "budget_tokens": self.thinking_budget}
+            payload["temperature"] = 1
+            payload["max_tokens"] = max(max_tokens, self.thinking_budget + 1024)
         if merged_system:
             payload["system"] = merged_system
         if tools:
@@ -608,56 +1023,23 @@ class AnthropicProvider(LlmProvider):
                 )
             payload["tools"] = anth_tools
 
+        if stream_requested:
+            payload["stream"] = True
+            return self._complete_streaming(
+                url,
+                payload,
+                headers,
+                on_text_delta=on_text_delta,
+                on_reasoning_delta=on_reasoning_delta,
+            )
+
         data = _http_post_json(url, payload, headers, timeout_s=self.timeout_s, provider_name=self.provider_name)
-
-        text_parts: list[str] = []
-        tool_calls: list[ToolCall] = []
-        for idx, block in enumerate(data.get("content") or []):
-            if not isinstance(block, dict):
-                continue
-            btype = block.get("type")
-            if btype == "text":
-                text_parts.append(str(block.get("text") or ""))
-            elif btype == "tool_use":
-                tc_name = str(block.get("name") or "")
-                tc_id = str(block.get("id") or f"toolu_{idx}")
-                raw_input = block.get("input")
-                args = dict(raw_input) if isinstance(raw_input, dict) else {}
-                tool_calls.append(ToolCall(id=tc_id, name=tc_name, arguments=args))
-
-        text = "".join(text_parts)
-        if on_text_delta is not None and text:
-            on_text_delta(text)
-
-        raw_stop = str(data.get("stop_reason") or ("tool_use" if tool_calls else "end_turn"))
-        finish_map = {
-            "end_turn": "stop",
-            "stop_sequence": "stop",
-            "tool_use": "tool_calls",
-            "max_tokens": "length",
-        }
-        finish_reason = finish_map.get(raw_stop, raw_stop)
-
-        raw_usage = data.get("usage") or {}
-        usage: dict[str, int] = {}
-        if isinstance(raw_usage, dict):
-            in_tok = raw_usage.get("input_tokens")
-            out_tok = raw_usage.get("output_tokens")
-            if isinstance(in_tok, int):
-                usage["prompt_tokens"] = in_tok
-            if isinstance(out_tok, int):
-                usage["completion_tokens"] = out_tok
-            if "prompt_tokens" in usage and "completion_tokens" in usage:
-                usage["total_tokens"] = usage["prompt_tokens"] + usage["completion_tokens"]
-
-        return LlmResponse(
-            text=text,
-            tool_calls=tool_calls,
-            finish_reason=finish_reason,
-            usage=usage,
-            model=str(data.get("model") or self.model),
-            provider=self.provider_name,
-        )
+        result = self._parse_json_response(data)
+        if on_reasoning_delta is not None and result.reasoning:
+            on_reasoning_delta(result.reasoning)
+        if on_text_delta is not None and result.text:
+            on_text_delta(result.text)
+        return result
 
 
 # ---------------------------------------------------------------------------
@@ -744,37 +1126,30 @@ class GeminiProvider(LlmProvider):
 
         return "\n\n".join(p for p in sys_parts if p), contents
 
-    def complete(
-        self,
-        messages: list[dict[str, Any]],
-        *,
-        system: str = "",
-        tools: list[dict[str, Any]] | None = None,
-        temperature: float = 0.2,
-        max_tokens: int = 4096,
-        on_text_delta: Callable[[str], None] | None = None,
-    ) -> LlmResponse:
-        url = f"{self.base_url}/v1beta/models/{self.model}:generateContent"
-        headers = {
-            "Content-Type": "application/json",
-            "x-goog-api-key": self.api_key,
-        }
-        merged_system, contents = self._build_contents(messages, system)
-        payload: dict[str, Any] = {
-            "contents": contents,
-            "generationConfig": {
-                "temperature": temperature,
-                "maxOutputTokens": max_tokens,
-            },
-        }
-        if merged_system:
-            payload["systemInstruction"] = {"parts": [{"text": merged_system}]}
-        if tools:
-            decls = [_normalize_tool_schema(t) for t in tools]
-            payload["tools"] = [{"functionDeclarations": decls}]
+    @staticmethod
+    def _map_finish_reason(raw_finish: str, tool_calls: list[ToolCall]) -> str:
+        upper = raw_finish.upper()
+        if tool_calls:
+            return "tool_calls"
+        if upper == "STOP":
+            return "stop"
+        if upper == "MAX_TOKENS":
+            return "length"
+        return upper.lower()
 
-        data = _http_post_json(url, payload, headers, timeout_s=self.timeout_s, provider_name=self.provider_name)
+    @staticmethod
+    def _extract_usage(raw_usage: Any) -> dict[str, int]:
+        usage: dict[str, int] = {}
+        if isinstance(raw_usage, dict):
+            if isinstance(raw_usage.get("promptTokenCount"), int):
+                usage["prompt_tokens"] = raw_usage["promptTokenCount"]
+            if isinstance(raw_usage.get("candidatesTokenCount"), int):
+                usage["completion_tokens"] = raw_usage["candidatesTokenCount"]
+            if isinstance(raw_usage.get("totalTokenCount"), int):
+                usage["total_tokens"] = raw_usage["totalTokenCount"]
+        return usage
 
+    def _parse_json_response(self, data: dict[str, Any]) -> LlmResponse:
         candidates = data.get("candidates") or []
         if not candidates or not isinstance(candidates, list):
             raise LlmError(f"gemini response missing 'candidates': {data}")
@@ -783,11 +1158,15 @@ class GeminiProvider(LlmProvider):
         parts = content.get("parts") or []
 
         text_parts: list[str] = []
+        reasoning_parts: list[str] = []
         tool_calls: list[ToolCall] = []
         for idx, part in enumerate(parts):
             if not isinstance(part, dict):
                 continue
-            if "text" in part and part["text"] is not None:
+            if part.get("thought") is True:
+                if part.get("text") is not None:
+                    reasoning_parts.append(str(part["text"]))
+            elif "text" in part and part["text"] is not None:
                 text_parts.append(str(part["text"]))
             if "functionCall" in part and isinstance(part["functionCall"], dict):
                 fc = part["functionCall"]
@@ -797,38 +1176,174 @@ class GeminiProvider(LlmProvider):
                 args = dict(raw_args) if isinstance(raw_args, dict) else {}
                 tool_calls.append(ToolCall(id=fc_id, name=fc_name, arguments=args))
 
-        text = "".join(text_parts)
-        if on_text_delta is not None and text:
-            on_text_delta(text)
-
-        raw_finish = str(cand.get("finishReason") or "STOP").upper()
-        if tool_calls:
-            finish_reason = "tool_calls"
-        elif raw_finish == "STOP":
-            finish_reason = "stop"
-        elif raw_finish == "MAX_TOKENS":
-            finish_reason = "length"
-        else:
-            finish_reason = raw_finish.lower()
-
-        raw_usage = data.get("usageMetadata") or {}
-        usage: dict[str, int] = {}
-        if isinstance(raw_usage, dict):
-            if isinstance(raw_usage.get("promptTokenCount"), int):
-                usage["prompt_tokens"] = raw_usage["promptTokenCount"]
-            if isinstance(raw_usage.get("candidatesTokenCount"), int):
-                usage["completion_tokens"] = raw_usage["candidatesTokenCount"]
-            if isinstance(raw_usage.get("totalTokenCount"), int):
-                usage["total_tokens"] = raw_usage["totalTokenCount"]
-
+        raw_finish = str(cand.get("finishReason") or "STOP")
         return LlmResponse(
-            text=text,
+            text="".join(text_parts),
             tool_calls=tool_calls,
-            finish_reason=finish_reason,
-            usage=usage,
+            finish_reason=self._map_finish_reason(raw_finish, tool_calls),
+            usage=self._extract_usage(data.get("usageMetadata")),
             model=str(data.get("modelVersion") or self.model),
             provider=self.provider_name,
+            reasoning="".join(reasoning_parts),
         )
+
+    def _complete_streaming(
+        self,
+        url: str,
+        payload: dict[str, Any],
+        headers: dict[str, str],
+        *,
+        on_text_delta: Callable[[str], None] | None = None,
+        on_reasoning_delta: Callable[[str], None] | None = None,
+    ) -> LlmResponse:
+        body = json.dumps(payload, ensure_ascii=False).encode("utf-8")
+        req = urllib.request.Request(url, data=body, headers=headers, method="POST")
+
+        text_parts: list[str] = []
+        reasoning_parts: list[str] = []
+        tool_calls: list[ToolCall] = []
+        raw_finish: str | None = None
+        usage: dict[str, int] = {}
+        model_name = self.model
+
+        try:
+            with urllib.request.urlopen(req, timeout=self.timeout_s) as resp:
+                content_type = (resp.headers.get("Content-Type") or "").lower()
+                if "application/json" in content_type and "text/event-stream" not in content_type:
+                    raw = resp.read().decode("utf-8", errors="replace")
+                    parsed = json.loads(raw)
+                    result = self._parse_json_response(parsed)
+                    if on_reasoning_delta is not None and result.reasoning:
+                        on_reasoning_delta(result.reasoning)
+                    if on_text_delta is not None and result.text:
+                        on_text_delta(result.text)
+                    return result
+
+                for raw_line in resp:
+                    line = raw_line.decode("utf-8", errors="replace").strip()
+                    if not line or line.startswith(":") or not line.startswith("data:"):
+                        continue
+                    data_str = line[5:].strip()
+                    if data_str == "[DONE]":
+                        break
+                    try:
+                        chunk = json.loads(data_str)
+                    except json.JSONDecodeError as exc:
+                        raise LlmError(f"{self.provider_name} SSE chunk invalid JSON: {exc} ({data_str[:200]})") from exc
+
+                    if isinstance(chunk.get("error"), dict):
+                        err_msg = chunk["error"].get("message") or str(chunk["error"])
+                        raise LlmError(f"{self.provider_name} SSE error: {err_msg}")
+
+                    if chunk.get("modelVersion"):
+                        model_name = str(chunk["modelVersion"])
+                    if isinstance(chunk.get("usageMetadata"), dict):
+                        usage = self._extract_usage(chunk["usageMetadata"])
+
+                    candidates = chunk.get("candidates") or []
+                    if not candidates or not isinstance(candidates, list):
+                        continue
+                    cand = candidates[0] or {}
+                    if cand.get("finishReason"):
+                        raw_finish = str(cand["finishReason"])
+                    content = cand.get("content") or {}
+                    for part in content.get("parts") or []:
+                        if not isinstance(part, dict):
+                            continue
+                        if part.get("thought") is True:
+                            if part.get("text") is not None:
+                                r_txt = str(part["text"])
+                                if r_txt:
+                                    reasoning_parts.append(r_txt)
+                                    if on_reasoning_delta is not None:
+                                        on_reasoning_delta(r_txt)
+                        elif "text" in part and part["text"] is not None:
+                            t_txt = str(part["text"])
+                            if t_txt:
+                                text_parts.append(t_txt)
+                                if on_text_delta is not None:
+                                    on_text_delta(t_txt)
+                        if "functionCall" in part and isinstance(part["functionCall"], dict):
+                            fc = part["functionCall"]
+                            fc_name = str(fc.get("name") or "")
+                            fc_id = str(fc.get("id") or f"gemini_call_{len(tool_calls)}")
+                            raw_args = fc.get("args")
+                            args = dict(raw_args) if isinstance(raw_args, dict) else {}
+                            tool_calls.append(ToolCall(id=fc_id, name=fc_name, arguments=args))
+        except urllib.error.HTTPError as exc:
+            err_body = ""
+            try:
+                err_body = exc.read().decode("utf-8", errors="replace").strip()
+            except Exception:
+                pass
+            raise LlmError(f"{self.provider_name} HTTP {exc.code} from {url}: {err_body or exc.reason}") from exc
+        except (urllib.error.URLError, TimeoutError, OSError) as exc:
+            raise LlmError(f"{self.provider_name} streaming request failed ({url}): {exc}") from exc
+
+        return LlmResponse(
+            text="".join(text_parts),
+            tool_calls=tool_calls,
+            finish_reason=self._map_finish_reason(raw_finish or "STOP", tool_calls),
+            usage=usage,
+            model=model_name,
+            provider=self.provider_name,
+            reasoning="".join(reasoning_parts),
+        )
+
+    def complete(
+        self,
+        messages: list[dict[str, Any]],
+        *,
+        system: str = "",
+        tools: list[dict[str, Any]] | None = None,
+        temperature: float = 0.2,
+        max_tokens: int = 4096,
+        on_text_delta: Callable[[str], None] | None = None,
+        on_reasoning_delta: Callable[[str], None] | None = None,
+    ) -> LlmResponse:
+        gen_cfg: dict[str, Any] = {
+            "temperature": temperature,
+            "maxOutputTokens": max_tokens,
+        }
+        if self.model.startswith("gemini-2.5") or self.model.startswith("gemini-3"):
+            gen_cfg["thinkingConfig"] = {"includeThoughts": True}
+
+        merged_system, contents = self._build_contents(messages, system)
+        payload: dict[str, Any] = {
+            "contents": contents,
+            "generationConfig": gen_cfg,
+        }
+        if merged_system:
+            payload["systemInstruction"] = {"parts": [{"text": merged_system}]}
+        if tools:
+            decls = [_normalize_tool_schema(t) for t in tools]
+            payload["tools"] = [{"functionDeclarations": decls}]
+
+        if on_text_delta is not None:
+            url = f"{self.base_url}/v1beta/models/{self.model}:streamGenerateContent?alt=sse"
+            headers = {
+                "Content-Type": "application/json",
+                "Accept": "text/event-stream, application/json",
+                "x-goog-api-key": self.api_key,
+            }
+            return self._complete_streaming(
+                url,
+                payload,
+                headers,
+                on_text_delta=on_text_delta,
+                on_reasoning_delta=on_reasoning_delta,
+            )
+
+        url = f"{self.base_url}/v1beta/models/{self.model}:generateContent"
+        headers = {
+            "Content-Type": "application/json",
+            "x-goog-api-key": self.api_key,
+        }
+        data = _http_post_json(url, payload, headers, timeout_s=self.timeout_s, provider_name=self.provider_name)
+        result = self._parse_json_response(data)
+        if on_reasoning_delta is not None and result.reasoning:
+            on_reasoning_delta(result.reasoning)
+        return result
 
 
 # ---------------------------------------------------------------------------
@@ -849,13 +1364,29 @@ class MockLlmProvider(LlmProvider):
         *,
         model: str = "mock-model",
         provider_name: str = "mock",
+        stream_chunk_chars: int = 0,
+        stream_chunk_delay_s: float = 0.0,
     ) -> None:
         self.provider_name = provider_name
         self.model = model
         self._callback = responses if callable(responses) else None
         self._queue: deque[LlmResponse] = deque(responses) if isinstance(responses, list) else deque()
         self._has_explicit_queue = isinstance(responses, list)
+        self.stream_chunk_chars = max(0, int(stream_chunk_chars))
+        self.stream_chunk_delay_s = max(0.0, float(stream_chunk_delay_s))
         self.call_history: list[dict[str, Any]] = []
+
+    def _emit_streamed(self, content: str, cb: Callable[[str], None] | None) -> None:
+        if cb is None or not content:
+            return
+        if self.stream_chunk_chars <= 0:
+            cb(content)
+            return
+        step = self.stream_chunk_chars
+        for idx in range(0, len(content), step):
+            cb(content[idx : idx + step])
+            if self.stream_chunk_delay_s > 0:
+                time.sleep(self.stream_chunk_delay_s)
 
     def complete(
         self,
@@ -866,6 +1397,7 @@ class MockLlmProvider(LlmProvider):
         temperature: float = 0.2,
         max_tokens: int = 4096,
         on_text_delta: Callable[[str], None] | None = None,
+        on_reasoning_delta: Callable[[str], None] | None = None,
     ) -> LlmResponse:
         self.call_history.append(
             {
@@ -895,8 +1427,8 @@ class MockLlmProvider(LlmProvider):
             resp.model = self.model
         if not resp.provider:
             resp.provider = self.provider_name
-        if on_text_delta is not None and resp.text:
-            on_text_delta(resp.text)
+        self._emit_streamed(resp.reasoning, on_reasoning_delta)
+        self._emit_streamed(resp.text, on_text_delta)
         return resp
 
 
@@ -929,6 +1461,19 @@ def _pick_first_str(*candidates: Any) -> str | None:
     return None
 
 
+def _pick_first_int(*candidates: Any, default: int = 0) -> int:
+    for item in candidates:
+        if item is not None and not isinstance(item, bool):
+            s = str(item).strip()
+            if not s:
+                continue
+            try:
+                return int(s)
+            except ValueError as exc:
+                raise LlmError(f"Invalid integer config value {item!r}") from exc
+    return default
+
+
 def create_provider(
     provider: str | None = None,
     *,
@@ -937,6 +1482,7 @@ def create_provider(
     base_url: str | None = None,
     timeout_s: float = 120.0,
     project_dir: str | None = None,
+    thinking_budget: int | None = None,
 ) -> LlmProvider:
     """按优先级解析配置并创建对应的 `LlmProvider` 实例。
 
@@ -986,6 +1532,13 @@ def create_provider(
         user_sec.get("api_key"),
         os.environ.get("MCU_AGENT_API_KEY"),
     )
+    eff_thinking_budget = _pick_first_int(
+        thinking_budget,
+        proj_sec.get("thinking_budget"),
+        user_sec.get("thinking_budget"),
+        os.environ.get("MCU_AGENT_THINKING_BUDGET"),
+        default=0,
+    )
 
     if eff_provider == "mock":
         return MockLlmProvider(model=eff_model or "mock-model")
@@ -1002,6 +1555,7 @@ def create_provider(
             api_key=eff_api_key,
             base_url=eff_base_url,
             timeout_s=timeout_s,
+            thinking_budget=eff_thinking_budget,
         )
 
     if eff_provider == "gemini":

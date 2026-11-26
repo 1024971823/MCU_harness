@@ -543,6 +543,78 @@ class TestAgentRuntimeEndToEnd(unittest.TestCase):
             done2 = next(e for e in events2 if e.kind == "turn_completed")
             self.assertTrue(done2.data["cancelled"])
 
+    def test_08_runtime_emits_reasoning_before_text_and_persists_session_jsonl(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            proj = _create_temp_mcu_project(Path(tmp))
+            provider = MockLlmProvider(
+                [
+                    LlmResponse(
+                        reasoning="Checking vector table and SCB registers.",
+                        text="Inspecting HardFault now.",
+                        reasoning_blocks=[{"type": "thinking", "thinking": "Checking vector table and SCB registers.", "signature": "sig_rt"}],
+                    )
+                ],
+                stream_chunk_chars=8,
+                stream_chunk_delay_s=0.0,
+            )
+            session_id = "reasoning-sess-01"
+            rt, _pm, _probe, _guard = _make_isolated_runtime(proj, provider, session_id=session_id)
+
+            stream_events: list[tuple[str, int, str]] = []
+
+            def _on_ev(ev: Any) -> None:
+                if ev.kind in ("reasoning_delta", "text_delta"):
+                    stream_events.append((ev.kind, int(ev.data["step"]), str(ev.data["delta"])))
+
+            unsub = rt.subscribe(_on_ev)
+            try:
+                res = rt.run_turn("Explain fault")
+            finally:
+                unsub()
+
+            self.assertIsNone(res.error)
+            self.assertEqual(res.text, "Inspecting HardFault now.")
+            reasoning_indices = [i for i, (k, _, _) in enumerate(stream_events) if k == "reasoning_delta"]
+            text_indices = [i for i, (k, _, _) in enumerate(stream_events) if k == "text_delta"]
+            self.assertGreater(len(reasoning_indices), 1)
+            self.assertGreater(len(text_indices), 1)
+            self.assertLess(max(reasoning_indices), min(text_indices))
+            self.assertEqual("".join(d for k, _, d in stream_events if k == "reasoning_delta"), "Checking vector table and SCB registers.")
+            self.assertEqual("".join(d for k, _, d in stream_events if k == "text_delta"), "Inspecting HardFault now.")
+
+            assistant_msgs = [m for m in rt.messages if m.get("role") == "assistant"]
+            self.assertEqual(len(assistant_msgs), 1)
+            self.assertEqual(assistant_msgs[0]["reasoning"], "Checking vector table and SCB registers.")
+            self.assertEqual(assistant_msgs[0]["reasoning_blocks"][0]["signature"], "sig_rt")
+
+            loaded = load_session(proj, session_id)
+            loaded_assistant = [m for m in loaded["messages"] if m.get("role") == "assistant"]
+            self.assertEqual(len(loaded_assistant), 1)
+            self.assertEqual(loaded_assistant[0]["reasoning"], "Checking vector table and SCB registers.")
+            self.assertEqual(loaded_assistant[0]["reasoning_blocks"][0]["signature"], "sig_rt")
+
+            # Also verify demo mock provider streams reasoning without [mock-llm] prefix and supports ZH/EN + /crash + /doctor
+            demo = tui._build_demo_mock_provider()
+            self.assertEqual(demo.stream_chunk_chars, 4)
+            self.assertEqual(demo.stream_chunk_delay_s, 0.015)
+
+            rt_demo, _pm2, _probe2, _guard2 = _make_isolated_runtime(proj, demo)
+            demo_events: list[str] = []
+            unsub_demo = rt_demo.subscribe(lambda ev: demo_events.append(ev.kind))
+            try:
+                res_crash = rt_demo.run_turn("/crash 请帮我分析死机")
+            finally:
+                unsub_demo()
+            self.assertIsNone(res_crash.error)
+            self.assertNotIn("[mock-llm]", res_crash.text)
+            self.assertIn("diagnose_crash", [tc.get("name") for m in rt_demo.messages for tc in m.get("tool_calls", [])])
+            self.assertIn("reasoning_delta", demo_events)
+            self.assertIn("诊断", res_crash.text)
+
+            res_doc = rt_demo.run_turn("/doctor")
+            self.assertIsNone(res_doc.error)
+            self.assertIn("USART1", res_doc.text)
+
 
 if __name__ == "__main__":
     unittest.main()
