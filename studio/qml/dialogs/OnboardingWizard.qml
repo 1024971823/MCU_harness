@@ -18,6 +18,7 @@ AppDialog {
 
     dialogWidth: 720
     iconName: Icons.sparkles
+    iconColor: Theme.hueViolet
     title: qsTr("Welcome to MCU Harness Studio")
     subtitle: qsTr("Configure your workspace, AI model provider, and hardware safety interlocks")
 
@@ -48,12 +49,14 @@ AppDialog {
                 readonly property bool done: root.stepIndex > index
 
                 Layout.fillWidth: true
-                implicitHeight: 34
-                radius: Theme.radiusMd
+                Layout.preferredWidth: 1
+                implicitHeight: 36
+                radius: Theme.radiusLg
                 color: current ? Theme.accentSubtle : (done ? Theme.successSubtle : Theme.bgElevated)
-                border.color: current ? Theme.accent : (done ? Theme.success : Theme.borderSubtle)
+                border.color: current ? Theme.accent : (done ? Theme.alpha(Theme.success, 0.5) : Theme.borderSubtle)
                 border.width: 1
 
+                HoverHandler { cursorShape: Qt.PointingHandCursor }
                 TapHandler { onTapped: root.stepIndex = stepPill.index }
 
                 RowLayout {
@@ -61,9 +64,9 @@ AppDialog {
                     spacing: Theme.s2
 
                     Rectangle {
-                        Layout.preferredWidth: 18
-                        Layout.preferredHeight: 18
-                        radius: 9
+                        Layout.preferredWidth: 20
+                        Layout.preferredHeight: 20
+                        radius: 10
                         color: stepPill.current ? Theme.accent : (stepPill.done ? Theme.success : Theme.borderStrong)
 
                         Text {
@@ -101,14 +104,35 @@ AppDialog {
             anchors.fill: parent
             spacing: Theme.s4
 
-            Text {
+            Rectangle {
                 Layout.fillWidth: true
-                text: qsTr("Closed-loop embedded AI engineering with zero-compromise hardware safety.")
-                font.family: Theme.fontSans
-                font.pixelSize: Theme.textMd
-                font.weight: Theme.weightMedium
-                color: Theme.textPrimary
-                wrapMode: Text.WordWrap
+                implicitHeight: heroRow.implicitHeight + Theme.s3 * 2
+                radius: Theme.radiusLg
+                color: Theme.bgElevated
+                border.color: Theme.borderSubtle
+                border.width: 1
+
+                RowLayout {
+                    id: heroRow
+                    anchors.fill: parent
+                    anchors.margins: Theme.s3
+                    spacing: Theme.s3
+
+                    AgentOrb {
+                        size: 38
+                        animated: false
+                    }
+
+                    Text {
+                        Layout.fillWidth: true
+                        text: qsTr("Closed-loop embedded AI engineering with zero-compromise hardware safety.")
+                        font.family: Theme.fontSans
+                        font.pixelSize: Theme.textMd
+                        font.weight: Theme.weightMedium
+                        color: Theme.textPrimary
+                        wrapMode: Text.WordWrap
+                    }
+                }
             }
 
             SettingRow {
@@ -323,11 +347,10 @@ AppDialog {
     }
 
     footer: [
-        Text {
+        Pill {
+            hue: Theme.hueViolet
             text: qsTr("Step %1 of 4").arg(root.stepIndex + 1)
-            font.family: Theme.fontSans
-            font.pixelSize: Theme.textSm
-            color: Theme.textMuted
+            compact: true
         },
         Item { Layout.fillWidth: true },
         AppButton {
@@ -344,8 +367,8 @@ AppDialog {
                 root.close()
             }
         },
-        AppButton {
-            variant: "primary"
+        GradientButton {
+            iconName: root.stepIndex < 3 ? Icons.chevronRight : Icons.check
             text: root.stepIndex < 3 ? qsTr("Next") : qsTr("Finish Setup")
             onClicked: {
                 if (root.stepIndex < 3) {

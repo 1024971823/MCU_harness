@@ -10,7 +10,7 @@ AppDialog {
 
     dialogWidth: 540
     iconName: Icons.download
-    iconColor: Theme.accent
+    iconColor: Updater.updateAvailable ? Theme.hueEmerald : Theme.hueSky
     title: qsTr("Software Update")
     subtitle: Updater.updateAvailable
         ? qsTr("A new release of MCU Harness Studio is available")
@@ -18,13 +18,33 @@ AppDialog {
 
     RowLayout {
         Layout.fillWidth: true
-        spacing: Theme.s3
+        spacing: Theme.s2
 
-        Badge { text: "v" + (Updater.currentVersion || AppInfo.version || "0.1.0"); variant: "neutral" }
-        Icon { visible: Updater.updateAvailable; name: Icons.chevronRight; size: 14; color: Theme.textMuted }
-        Badge { visible: Updater.updateAvailable; text: "v" + (Updater.latestVersion || ""); variant: "success" }
+        Pill {
+            hue: Theme.hueSlate
+            text: "v" + (Updater.currentVersion || AppInfo.version || "0.1.0")
+        }
+        Icon {
+            visible: Updater.updateAvailable
+            name: Icons.chevronRight
+            size: 14
+            color: Theme.textMuted
+        }
+        Pill {
+            visible: Updater.updateAvailable
+            hue: Theme.hueEmerald
+            icon: Icons.sparkles
+            text: "v" + (Updater.latestVersion || "")
+        }
+
         Item { Layout.fillWidth: true }
-        Badge {
+
+        Pill {
+            dot: true
+            dotPulsing: Updater.status === "checking" || Updater.status === "downloading"
+            hue: Updater.status === "error"
+                ? Theme.hueRose
+                : (Updater.updateAvailable ? Theme.hueEmerald : Theme.hueSky)
             text: {
                 if (Updater.status === "checking") return qsTr("Checking")
                 if (Updater.status === "downloading") return qsTr("Downloading")
@@ -35,20 +55,19 @@ AppDialog {
                 if (Updater.status === "upToDate") return qsTr("Up to Date")
                 return qsTr("Ready")
             }
-            variant: Updater.status === "error" ? "danger" : (Updater.updateAvailable ? "accent" : "neutral")
-            compact: true
         }
     }
 
     Rectangle {
         Layout.fillWidth: true
-        Layout.preferredHeight: 200
-        radius: Theme.radiusMd
+        Layout.preferredHeight: 204
+        radius: Theme.radiusLg
         color: Theme.bgElevated
         border.color: Theme.borderSubtle
         border.width: 1
 
         ScrollView {
+            id: notesScroll
             anchors.fill: parent
             anchors.margins: Theme.s3
             clip: true
@@ -56,7 +75,7 @@ AppDialog {
             ScrollBar.horizontal.policy: ScrollBar.AlwaysOff
 
             MarkdownText {
-                width: parent.width
+                width: notesScroll.availableWidth
                 text: Updater.releaseNotes || qsTr("You are running the latest version of MCU Harness Studio.")
             }
         }
@@ -65,7 +84,7 @@ AppDialog {
     ColumnLayout {
         visible: Updater.status === "downloading"
         Layout.fillWidth: true
-        spacing: Theme.s1
+        spacing: Theme.s1 + 2
 
         Text {
             text: qsTr("Downloading update (%1%)...").arg(Math.round((Updater.downloadProgress || 0) * 100))
@@ -76,20 +95,32 @@ AppDialog {
 
         AppProgressBar {
             Layout.fillWidth: true
+            barHeight: 7
             from: 0.0
             to: 1.0
             value: Updater.downloadProgress || 0.0
         }
     }
 
-    Text {
+    Rectangle {
         visible: !!(Updater.errorMessage && Updater.errorMessage.length > 0)
         Layout.fillWidth: true
-        text: Updater.errorMessage || ""
-        font.family: Theme.fontSans
-        font.pixelSize: Theme.textSm
-        color: Theme.danger
-        wrapMode: Text.WordWrap
+        implicitHeight: updErrTxt.implicitHeight + Theme.s2 * 2
+        radius: Theme.radiusMd
+        color: Theme.dangerSubtle
+        border.color: Theme.alpha(Theme.danger, 0.35)
+        border.width: 1
+
+        Text {
+            id: updErrTxt
+            anchors.fill: parent
+            anchors.margins: Theme.s2
+            text: Updater.errorMessage || ""
+            font.family: Theme.fontSans
+            font.pixelSize: Theme.textSm
+            color: Theme.danger
+            wrapMode: Text.WordWrap
+        }
     }
 
     footer: [
@@ -108,25 +139,22 @@ AppDialog {
             text: qsTr("Later")
             onClicked: root.close()
         },
-        AppButton {
+        GradientButton {
             visible: !Updater.updateAvailable
-            variant: "primary"
             iconName: Icons.refresh
             loading: Updater.status === "checking"
             text: qsTr("Check Now")
             onClicked: Updater.checkForUpdates()
         },
-        AppButton {
+        GradientButton {
             visible: Updater.updateAvailable && Updater.status !== "ready"
-            variant: "primary"
             iconName: Icons.download
             loading: Updater.status === "downloading"
             text: qsTr("Download Update")
             onClicked: Updater.downloadUpdate()
         },
-        AppButton {
+        GradientButton {
             visible: Updater.status === "ready"
-            variant: "primary"
             iconName: Icons.rotateCcw
             text: qsTr("Install & Restart")
             onClicked: Updater.installAndRestart()

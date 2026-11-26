@@ -23,8 +23,8 @@ AppDialog {
     dialogWidth: 640
     critical: true
     iconName: Icons.shieldAlert
-    iconColor: isDanger ? Theme.danger : (riskLevel === "hardware_state" ? Theme.warning : (riskLevel === "shell" ? Theme.purple : Theme.info))
-    stripColor: iconColor
+    iconColor: isDanger ? Theme.danger : PluginRegistry.riskHue(riskLevel)
+    stripColor: isDanger ? Theme.danger : iconColor
     title: qsTr("Hardware Safety Approval Required")
     subtitle: qsTr("HITL Interlock paused tool execution pending your explicit review")
 
@@ -47,17 +47,74 @@ AppDialog {
         }
     }
 
+    // Rich Rose -> Orange Danger Header Strip when isDanger
+    Rectangle {
+        visible: root.isDanger
+        Layout.fillWidth: true
+        implicitHeight: dangerStripRow.implicitHeight + Theme.s3 * 2
+        radius: Theme.radiusLg
+        border.color: Theme.alpha("#FFFFFF", 0.16)
+        border.width: 1
+        gradient: Gradient {
+            orientation: Gradient.Horizontal
+            GradientStop { position: 0.0; color: Theme.hueRose }
+            GradientStop { position: 1.0; color: Theme.hueOrange }
+        }
+
+        RowLayout {
+            id: dangerStripRow
+            anchors.fill: parent
+            anchors.margins: Theme.s3
+            spacing: Theme.s2 + 2
+
+            Rectangle {
+                Layout.preferredWidth: 28
+                Layout.preferredHeight: 28
+                radius: Theme.radiusMd
+                color: Theme.alpha("#000000", 0.22)
+
+                Icon {
+                    anchors.centerIn: parent
+                    name: Icons.shieldAlert
+                    size: 16
+                    color: "#FFFFFF"
+                }
+            }
+
+            ColumnLayout {
+                Layout.fillWidth: true
+                spacing: 1
+
+                Text {
+                    Layout.fillWidth: true
+                    text: qsTr("CRITICAL HARDWARE OPERATION")
+                    font.family: Theme.fontSans
+                    font.pixelSize: Theme.textSm
+                    font.weight: Theme.weightBold
+                    color: "#FFFFFF"
+                }
+
+                Text {
+                    Layout.fillWidth: true
+                    text: qsTr("'Allow for session' is permanently disabled. Explicit confirmation is required for every invocation.")
+                    font.family: Theme.fontSans
+                    font.pixelSize: Theme.textXs
+                    color: Theme.alpha("#FFFFFF", 0.92)
+                    wrapMode: Text.WordWrap
+                }
+            }
+        }
+    }
+
     // Tool & Queue Header Bar
     RowLayout {
         Layout.fillWidth: true
         spacing: Theme.s2
 
-        Text {
+        Pill {
+            icon: Icons.wrench
+            hue: root.iconColor
             text: root.toolName
-            font.family: Theme.fontMono
-            font.pixelSize: Theme.textMd
-            font.weight: Theme.weightSemiBold
-            color: Theme.textPrimary
         }
 
         Badge {
@@ -68,7 +125,7 @@ AppDialog {
                 if (root.riskLevel === "shell") return qsTr("SHELL")
                 return root.riskLevel.toUpperCase()
             }
-            variant: root.isDanger ? "danger" : (root.riskLevel === "hardware_state" ? "warning" : (root.riskLevel === "shell" ? "purple" : "info"))
+            variant: root.isDanger ? "danger" : (root.riskLevel === "hardware_state" ? "warning" : (root.riskLevel === "workspace_write" ? "purple" : "info"))
         }
 
         Item { Layout.fillWidth: true }
@@ -84,7 +141,7 @@ AppDialog {
     Rectangle {
         Layout.fillWidth: true
         implicitHeight: sumText.implicitHeight + Theme.s3 * 2
-        radius: Theme.radiusMd
+        radius: Theme.radiusLg
         color: Theme.bgElevated
         border.color: Theme.borderSubtle
         border.width: 1
@@ -98,34 +155,6 @@ AppDialog {
             font.pixelSize: Theme.textBase
             color: Theme.textPrimary
             wrapMode: Text.WordWrap
-        }
-    }
-
-    // Hard Safety Notice for hardware_danger
-    Rectangle {
-        visible: root.isDanger
-        Layout.fillWidth: true
-        implicitHeight: dangerNoticeRow.implicitHeight + Theme.s2 * 2
-        radius: Theme.radiusMd
-        color: Theme.dangerSubtle
-        border.color: Theme.danger
-        border.width: 1
-
-        RowLayout {
-            id: dangerNoticeRow
-            anchors.fill: parent
-            anchors.margins: Theme.s2 + 2
-            spacing: Theme.s2
-
-            Icon { name: Icons.triangleAlert; size: 15; color: Theme.danger }
-            Text {
-                Layout.fillWidth: true
-                text: qsTr("High-risk hardware operation: 'Allow for session' is permanently disabled. Each invocation requires explicit confirmation.")
-                font.family: Theme.fontSans
-                font.pixelSize: Theme.textXs
-                color: Theme.textPrimary
-                wrapMode: Text.WordWrap
-            }
         }
     }
 
@@ -204,7 +233,7 @@ AppDialog {
             onClicked: root.submitDecision(true, "session_tool")
         },
         AppButton {
-            variant: "primary"
+            variant: root.isDanger ? "danger" : "primary"
             iconName: Icons.check
             text: qsTr("Allow once")
             onClicked: root.submitDecision(true, "once")

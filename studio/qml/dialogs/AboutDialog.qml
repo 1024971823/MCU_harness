@@ -8,37 +8,71 @@ AppDialog {
     signal toastRequested(string message, string level)
 
     dialogWidth: 540
+    iconName: Icons.cpu
+    iconColor: Theme.hueViolet
     title: qsTr("About MCU Harness Studio")
     subtitle: qsTr("Hardware-aware embedded AI debugging workbench")
 
-    RowLayout {
+    Rectangle {
         Layout.fillWidth: true
-        spacing: Theme.s4
+        implicitHeight: brandRow.implicitHeight + Theme.s4 * 2
+        radius: Theme.radiusLg
+        color: Theme.bgElevated
+        border.color: Theme.borderSubtle
+        border.width: 1
 
-        Image {
-            Layout.preferredWidth: 56
-            Layout.preferredHeight: 56
-            source: "qrc:/qt/qml/McuStudio/resources/app/mcu-harness-studio.svg"
-            sourceSize: Qt.size(56, 56)
-            smooth: true
-            mipmap: true
-        }
+        RowLayout {
+            id: brandRow
+            anchors.fill: parent
+            anchors.margins: Theme.s4
+            spacing: Theme.s4
 
-        ColumnLayout {
-            Layout.fillWidth: true
-            spacing: 4
+            Rectangle {
+                Layout.preferredWidth: 64
+                Layout.preferredHeight: 64
+                radius: Theme.radiusXl
+                color: Theme.bgSurface
+                border.color: Theme.border
+                border.width: 1
 
-            Text {
-                text: qsTr("MCU Harness Studio")
-                font.family: Theme.fontSans
-                font.pixelSize: Theme.textLg
-                font.weight: Theme.weightSemiBold
-                color: Theme.textPrimary
+                Image {
+                    anchors.centerIn: parent
+                    width: 48
+                    height: 48
+                    source: "qrc:/qt/qml/McuStudio/resources/app/mcu-harness-studio.svg"
+                    sourceSize: Qt.size(48, 48)
+                    smooth: true
+                    mipmap: true
+                }
             }
 
-            KeyValueRow { label: qsTr("Studio"); value: AppInfo.version || "0.1.0"; monospace: true }
-            KeyValueRow { label: qsTr("Engine"); value: AppInfo.engineVersion || "0.1.0"; monospace: true }
-            KeyValueRow { label: qsTr("Commit"); value: AppInfo.gitHash || "dev"; monospace: true; copyable: true }
+            ColumnLayout {
+                Layout.fillWidth: true
+                spacing: Theme.s1 + 2
+
+                RowLayout {
+                    Layout.fillWidth: true
+                    spacing: Theme.s2
+
+                    Text {
+                        text: qsTr("MCU Harness Studio")
+                        font.family: Theme.fontSans
+                        font.pixelSize: Theme.textLg
+                        font.weight: Theme.weightSemiBold
+                        color: Theme.textPrimary
+                    }
+
+                    Pill {
+                        hue: Theme.hueViolet
+                        text: "Aurora"
+                        compact: true
+                    }
+                }
+
+                KeyValueRow { label: qsTr("Studio"); value: AppInfo.version || "0.1.0"; monospace: true }
+                KeyValueRow { label: qsTr("Engine"); value: AppInfo.engineVersion || "0.1.0"; monospace: true }
+                KeyValueRow { label: qsTr("Commit"); value: AppInfo.gitHash || "dev"; monospace: true; copyable: true }
+            }
         }
     }
 
@@ -61,8 +95,7 @@ AppDialog {
 
     footer: [
         Item { Layout.fillWidth: true },
-        AppButton {
-            variant: "primary"
+        GradientButton {
             text: qsTr("Close")
             onClicked: root.close()
         }

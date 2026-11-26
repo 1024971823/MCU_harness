@@ -24,32 +24,38 @@ Item {
     property bool draftRememberKey: Settings.rememberKey !== undefined ? Settings.rememberKey : true
 
     readonly property var sections: [
-        { id: "general",    icon: Icons.settings2, label: qsTr("General") },
-        { id: "appearance", icon: Icons.moon,      label: qsTr("Appearance") },
-        { id: "language",   icon: Icons.languages, label: qsTr("Language") },
-        { id: "model",      icon: Icons.sparkles,  label: qsTr("AI Model") },
-        { id: "hardware",   icon: Icons.hardware,  label: qsTr("Hardware") },
-        { id: "safety",     icon: Icons.shield,    label: qsTr("Safety Interlock") },
-        { id: "updates",    icon: Icons.download,  label: qsTr("Updates") },
-        { id: "privacy",    icon: Icons.fileDown,  label: qsTr("Privacy & Diagnostics") },
-        { id: "license",    icon: Icons.keyRound,  label: qsTr("License") },
-        { id: "about",      icon: Icons.info,      label: qsTr("About") }
+        { id: "general",    icon: Icons.settings2, label: qsTr("General"),               hue: Theme.hueSlate },
+        { id: "appearance", icon: Icons.moon,      label: qsTr("Appearance"),            hue: Theme.hueViolet },
+        { id: "language",   icon: Icons.languages, label: qsTr("Language"),              hue: Theme.hueCyan },
+        { id: "model",      icon: Icons.sparkles,  label: qsTr("AI Model"),              hue: Theme.accent },
+        { id: "hardware",   icon: Icons.hardware,  label: qsTr("Hardware"),              hue: Theme.hueAmber },
+        { id: "safety",     icon: Icons.shield,    label: qsTr("Safety Interlock"),      hue: Theme.hueEmerald },
+        { id: "updates",    icon: Icons.download,  label: qsTr("Updates"),               hue: Theme.hueSky },
+        { id: "privacy",    icon: Icons.fileDown,  label: qsTr("Privacy & Diagnostics"), hue: Theme.hueRose },
+        { id: "license",    icon: Icons.keyRound,  label: qsTr("License"),               hue: Theme.hueIndigo },
+        { id: "about",      icon: Icons.info,      label: qsTr("About"),                 hue: Theme.hueSlate }
     ]
 
     readonly property var providers: [
-        { id: "openai",     name: "OpenAI",     defaultModel: "gpt-4o",                         hint: "api.openai.com/v1",                      needsKey: true },
-        { id: "deepseek",   name: "DeepSeek",   defaultModel: "deepseek-chat",                  hint: "api.deepseek.com/v1",                    needsKey: true },
-        { id: "qwen",       name: "Qwen",       defaultModel: "qwen-plus",                      hint: "dashscope.aliyuncs.com/compatible-mode", needsKey: true },
-        { id: "openrouter", name: "OpenRouter", defaultModel: "anthropic/claude-3.7-sonnet",    hint: "openrouter.ai/api/v1",                   needsKey: true },
-        { id: "anthropic",  name: "Anthropic",  defaultModel: "claude-sonnet-4-20250514",       hint: "api.anthropic.com",                      needsKey: true },
-        { id: "gemini",     name: "Gemini",     defaultModel: "gemini-2.5-flash",               hint: "generativelanguage.googleapis.com",      needsKey: true },
-        { id: "ollama",     name: "Ollama",     defaultModel: "qwen2.5-coder:14b",              hint: "127.0.0.1:11434/v1",                     needsKey: false },
-        { id: "vllm",       name: "vLLM",       defaultModel: "default",                        hint: "127.0.0.1:8000/v1",                      needsKey: false },
-        { id: "mock",       name: "Mock (Offline)", defaultModel: "mock-model",                 hint: "Local demo simulation",                  needsKey: false }
+        { id: "openai",     name: "OpenAI",         defaultModel: "gpt-4o",                      hint: "api.openai.com/v1",                      needsKey: true },
+        { id: "deepseek",   name: "DeepSeek",       defaultModel: "deepseek-chat",               hint: "api.deepseek.com/v1",                    needsKey: true },
+        { id: "qwen",       name: "Qwen",           defaultModel: "qwen-plus",                   hint: "dashscope.aliyuncs.com/compatible-mode", needsKey: true },
+        { id: "openrouter", name: "OpenRouter",     defaultModel: "anthropic/claude-3.7-sonnet", hint: "openrouter.ai/api/v1",                   needsKey: true },
+        { id: "anthropic",  name: "Anthropic",      defaultModel: "claude-sonnet-4-20250514",    hint: "api.anthropic.com",                      needsKey: true },
+        { id: "gemini",     name: "Gemini",         defaultModel: "gemini-2.5-flash",            hint: "generativelanguage.googleapis.com",      needsKey: true },
+        { id: "ollama",     name: "Ollama",         defaultModel: "qwen2.5-coder:14b",           hint: "127.0.0.1:11434/v1",                     needsKey: false },
+        { id: "vllm",       name: "vLLM",           defaultModel: "default",                     hint: "127.0.0.1:8000/v1",                      needsKey: false },
+        { id: "mock",       name: "Mock (Offline)", defaultModel: "mock-model",                  hint: "Local demo simulation",                  needsKey: false }
     ]
 
+    function normalizedSection() {
+        if (activeSection === "project") return "general"
+        if (activeSection === "interlock") return "safety"
+        return activeSection
+    }
+
     function sectionVisible(secId) {
-        return searchFilter.trim().length > 0 || activeSection === secId
+        return searchFilter.trim().length > 0 || normalizedSection() === secId
     }
 
     FolderDialog {
@@ -76,10 +82,10 @@ Item {
         anchors.fill: parent
         spacing: 0
 
-        // Left Settings Navigation Rail
+        // Left Settings Navigation Rail (Refined Aurora Rail Items)
         Rectangle {
             Layout.fillHeight: true
-            Layout.preferredWidth: 210
+            Layout.preferredWidth: 232
             color: Theme.bgSidebar
 
             Divider {
@@ -95,14 +101,26 @@ Item {
                 anchors.margins: Theme.s3
                 spacing: Theme.s1
 
-                Text {
+                RowLayout {
+                    Layout.fillWidth: true
                     Layout.leftMargin: Theme.s2
                     Layout.bottomMargin: Theme.s2
-                    text: qsTr("Settings")
-                    font.family: Theme.fontSans
-                    font.pixelSize: Theme.textLg
-                    font.weight: Theme.weightSemiBold
-                    color: Theme.textPrimary
+                    spacing: Theme.s2
+
+                    IconChip {
+                        icon: Icons.settings
+                        hue: Theme.accent
+                        size: 26
+                        iconSize: 14
+                    }
+
+                    Text {
+                        text: qsTr("Settings")
+                        font.family: Theme.fontSans
+                        font.pixelSize: Theme.textLg
+                        font.weight: Theme.weightSemiBold
+                        color: Theme.textPrimary
+                    }
                 }
 
                 Repeater {
@@ -111,14 +129,25 @@ Item {
                     delegate: Rectangle {
                         id: secBtn
                         required property var modelData
-                        readonly property bool selected: root.activeSection === modelData.id && root.searchFilter.trim().length === 0
+                        readonly property bool selected: root.normalizedSection() === modelData.id && root.searchFilter.trim().length === 0
 
                         Layout.fillWidth: true
-                        implicitHeight: 32
-                        radius: Theme.radiusMd
-                        color: selected ? Theme.accentSubtle : (secHover.hovered ? Theme.bgHover : "transparent")
+                        implicitHeight: 36
+                        radius: Theme.radiusLg
+                        color: selected
+                            ? Theme.alpha(modelData.hue, Theme.isDark ? 0.14 : 0.10)
+                            : (secHover.hovered ? Theme.bgHover : "transparent")
+                        border.color: selected ? Theme.alpha(modelData.hue, 0.35) : "transparent"
+                        border.width: selected ? 1 : 0
 
-                        HoverHandler { id: secHover }
+                        Behavior on color {
+                            ColorAnimation { duration: Theme.animationsEnabled ? Theme.animFast : 0 }
+                        }
+
+                        HoverHandler {
+                            id: secHover
+                            cursorShape: Qt.PointingHandCursor
+                        }
                         TapHandler {
                             onTapped: {
                                 root.searchFilter = ""
@@ -126,16 +155,28 @@ Item {
                             }
                         }
 
+                        // Active left pill indicator
+                        Rectangle {
+                            visible: secBtn.selected
+                            anchors.left: parent.left
+                            anchors.verticalCenter: parent.verticalCenter
+                            anchors.leftMargin: 3
+                            width: 3
+                            height: 18
+                            radius: 2
+                            color: secBtn.modelData.hue
+                        }
+
                         RowLayout {
                             anchors.fill: parent
-                            anchors.leftMargin: Theme.s2 + 2
+                            anchors.leftMargin: Theme.s3
                             anchors.rightMargin: Theme.s2
-                            spacing: Theme.s2
+                            spacing: Theme.s2 + 2
 
                             Icon {
                                 name: secBtn.modelData.icon
                                 size: 15
-                                color: secBtn.selected ? Theme.accent : Theme.textSecondary
+                                color: secBtn.selected ? secBtn.modelData.hue : (secHover.hovered ? Theme.textPrimary : Theme.textSecondary)
                             }
 
                             Text {
@@ -143,9 +184,17 @@ Item {
                                 text: secBtn.modelData.label
                                 font.family: Theme.fontSans
                                 font.pixelSize: Theme.textBase
-                                font.weight: secBtn.selected ? Theme.weightSemiBold : Theme.weightNormal
-                                color: secBtn.selected ? Theme.textPrimary : Theme.textSecondary
+                                font.weight: secBtn.selected ? Theme.weightSemiBold : Theme.weightMedium
+                                color: secBtn.selected ? Theme.textPrimary : (secHover.hovered ? Theme.textPrimary : Theme.textSecondary)
                                 elide: Text.ElideRight
+                            }
+
+                            Rectangle {
+                                visible: secBtn.selected
+                                Layout.preferredWidth: 6
+                                Layout.preferredHeight: 6
+                                radius: 3
+                                color: secBtn.modelData.hue
                             }
                         }
                     }
@@ -167,17 +216,16 @@ Item {
                 Layout.preferredHeight: 58
                 color: Theme.bgCanvas
 
-                AppTextField {
+                SearchField {
                     anchors.verticalCenter: parent.verticalCenter
                     anchors.left: parent.left
                     anchors.right: parent.right
                     anchors.leftMargin: Theme.s6
                     anchors.rightMargin: Theme.s6
-                    leadingIcon: Icons.search
-                    placeholderText: qsTr("Search all settings (e.g. theme, key, baudrate, interlock, license)...")
-                    clearable: true
+                    placeholderText: qsTr("Search all settings (e.g. theme, thinking, plugins, key, baudrate, interlock, license)...")
                     text: root.searchFilter
                     onTextEdited: root.searchFilter = text
+                    onCleared: root.searchFilter = ""
                 }
 
                 Divider {
@@ -189,6 +237,7 @@ Item {
             }
 
             ScrollView {
+                id: scroll
                 Layout.fillWidth: true
                 Layout.fillHeight: true
                 clip: true
@@ -196,7 +245,7 @@ Item {
                 ScrollBar.horizontal.policy: ScrollBar.AlwaysOff
 
                 Item {
-                    width: parent.width
+                    width: scroll.availableWidth
                     implicitHeight: settingsCol.implicitHeight + Theme.s6 * 2
 
                     ColumnLayout {
@@ -207,10 +256,10 @@ Item {
                         anchors.right: parent.right
                         anchors.leftMargin: Theme.s6
                         anchors.rightMargin: Theme.s6
-                        Layout.maximumWidth: 820
+                        Layout.maximumWidth: 840
                         spacing: Theme.s5
 
-                        // 1. GENERAL
+                        // 1. GENERAL (Project & Telemetry)
                         Card {
                             visible: root.sectionVisible("general")
                             Layout.fillWidth: true
@@ -245,18 +294,18 @@ Item {
                             }
                         }
 
-                        // 2. APPEARANCE
+                        // 2. APPEARANCE (Theme + Thinking Chain + Enabled Plugins)
                         Card {
                             visible: root.sectionVisible("appearance")
                             Layout.fillWidth: true
                             iconName: Icons.moon
                             title: qsTr("Appearance")
-                            subtitle: qsTr("Choose light, dark, or follow operating system color scheme")
+                            subtitle: qsTr("Color scheme, reasoning visibility, and active workbench plugins")
 
                             SettingRow {
                                 title: qsTr("Color Theme")
                                 description: qsTr("Applies immediately across all panels, code blocks, and dialogs")
-                                keywords: "theme dark light system appearance"
+                                keywords: "theme dark light system appearance aurora"
                                 filterText: root.searchFilter
 
                                 RowLayout {
@@ -264,9 +313,9 @@ Item {
 
                                     Repeater {
                                         model: [
-                                            { id: "system", label: qsTr("System"), bg: "#1B222E", accent: "#4C7DFF", halfLight: true },
-                                            { id: "dark",   label: qsTr("Dark"),   bg: "#0B0E14", accent: "#4C7DFF", halfLight: false },
-                                            { id: "light",  label: qsTr("Light"),  bg: "#F6F8FB", accent: "#2F63EB", halfLight: false }
+                                            { id: "system", label: qsTr("System"), bg: "#09090F", accent: "#7C6CFF", halfLight: true },
+                                            { id: "dark",   label: qsTr("Dark"),   bg: "#09090F", accent: "#7C6CFF", halfLight: false },
+                                            { id: "light",  label: qsTr("Light"),  bg: "#F7F7FB", accent: "#6D5DF6", halfLight: false }
                                         ]
 
                                         delegate: Rectangle {
@@ -276,11 +325,12 @@ Item {
 
                                             implicitWidth: 108
                                             implicitHeight: 74
-                                            radius: Theme.radiusMd
+                                            radius: Theme.radiusMd + 2
                                             color: Theme.bgElevated
                                             border.color: selected ? Theme.accent : Theme.border
                                             border.width: selected ? 2 : 1
 
+                                            HoverHandler { cursorShape: Qt.PointingHandCursor }
                                             TapHandler { onTapped: Settings.setTheme(swatch.modelData.id) }
 
                                             ColumnLayout {
@@ -302,7 +352,7 @@ Item {
                                                         anchors.top: parent.top
                                                         anchors.bottom: parent.bottom
                                                         width: parent.width / 2
-                                                        color: "#F6F8FB"
+                                                        color: "#F7F7FB"
                                                     }
 
                                                     Rectangle {
@@ -320,6 +370,73 @@ Item {
                                                     font.weight: swatch.selected ? Theme.weightSemiBold : Theme.weightMedium
                                                     color: swatch.selected ? Theme.accent : Theme.textPrimary
                                                 }
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+
+                            Divider { Layout.fillWidth: true }
+
+                            SettingRow {
+                                title: qsTr("Thinking Chain")
+                                description: qsTr("Show expandable model reasoning steps inline in assistant turns")
+                                keywords: "thinking chain reasoning cot brain stream appearance"
+                                filterText: root.searchFilter
+
+                                AppSwitch {
+                                    checked: Settings.showThinking
+                                    onToggled: Settings.setShowThinking(checked)
+                                }
+                            }
+
+                            Divider { Layout.fillWidth: true }
+
+                            ColumnLayout {
+                                Layout.fillWidth: true
+                                spacing: Theme.s2
+
+                                Text {
+                                    text: qsTr("Enabled Plugins")
+                                    font.family: Theme.fontSans
+                                    font.pixelSize: Theme.textBase
+                                    font.weight: Theme.weightMedium
+                                    color: Theme.textPrimary
+                                }
+
+                                Text {
+                                    Layout.fillWidth: true
+                                    text: qsTr("Choose which built-in plugins appear in the right-hand plugin bar")
+                                    font.family: Theme.fontSans
+                                    font.pixelSize: Theme.textSm
+                                    color: Theme.textSecondary
+                                    wrapMode: Text.WordWrap
+                                }
+
+                                Repeater {
+                                    model: PluginRegistry.plugins
+
+                                    delegate: SettingRow {
+                                        id: pluginRow
+                                        required property var modelData
+                                        title: modelData.name
+                                        description: modelData.description
+                                        keywords: "plugin appearance " + modelData.id + " " + modelData.category
+                                        filterText: root.searchFilter
+
+                                        RowLayout {
+                                            spacing: Theme.s2 + 2
+
+                                            IconChip {
+                                                icon: pluginRow.modelData.icon
+                                                hue: pluginRow.modelData.hue
+                                                size: 26
+                                                iconSize: 13
+                                            }
+
+                                            AppSwitch {
+                                                checked: PluginRegistry.isEnabled(pluginRow.modelData.id)
+                                                onToggled: Settings.setPluginEnabled(pluginRow.modelData.id, checked)
                                             }
                                         }
                                     }
@@ -360,7 +477,6 @@ Item {
                             title: qsTr("AI Model & Provider")
                             subtitle: qsTr("Configure LLM provider routing, API credentials, and verify latency")
 
-                            // 9 Provider Cards
                             GridLayout {
                                 Layout.fillWidth: true
                                 columns: 3
@@ -376,13 +492,14 @@ Item {
                                         readonly property bool selected: root.draftProvider === modelData.id
 
                                         Layout.fillWidth: true
+                                        Layout.preferredWidth: 1
                                         implicitHeight: provCol.implicitHeight + Theme.s2 * 2 + 4
-                                        radius: Theme.radiusMd
+                                        radius: Theme.radiusMd + 2
                                         color: selected ? Theme.accentSubtle : (provHover.hovered ? Theme.bgHover : Theme.bgElevated)
                                         border.color: selected ? Theme.accent : Theme.borderSubtle
                                         border.width: selected ? 2 : 1
 
-                                        HoverHandler { id: provHover }
+                                        HoverHandler { id: provHover; cursorShape: Qt.PointingHandCursor }
                                         TapHandler {
                                             onTapped: {
                                                 root.draftProvider = provCard.modelData.id
@@ -505,8 +622,7 @@ Item {
 
                                 Item { Layout.fillWidth: true }
 
-                                AppButton {
-                                    variant: "primary"
+                                GradientButton {
                                     iconName: Icons.check
                                     text: qsTr("Apply Model Settings")
                                     onClicked: {
@@ -577,12 +693,14 @@ Item {
                                         readonly property bool selected: (Workbench.interlockMode || "interactive") === modelData.id
 
                                         Layout.fillWidth: true
+                                        Layout.preferredWidth: 1
                                         implicitHeight: modeCol.implicitHeight + Theme.s3 * 2
-                                        radius: Theme.radiusMd
-                                        color: selected ? Theme.accentSubtle : Theme.bgElevated
-                                        border.color: selected ? Theme.accent : Theme.borderSubtle
+                                        radius: Theme.radiusMd + 2
+                                        color: selected ? Theme.alpha(modelData.color, Theme.isDark ? 0.14 : 0.10) : Theme.bgElevated
+                                        border.color: selected ? modelData.color : Theme.borderSubtle
                                         border.width: selected ? 2 : 1
 
+                                        HoverHandler { cursorShape: Qt.PointingHandCursor }
                                         TapHandler { onTapped: Workbench.setInterlockMode(modeCard.modelData.id) }
 
                                         ColumnLayout {
@@ -705,9 +823,8 @@ Item {
                                 keywords: "license activation key trial machine id"
                                 filterText: root.searchFilter
 
-                                AppButton {
+                                GradientButton {
                                     buttonSize: "sm"
-                                    variant: "primary"
                                     iconName: Icons.keyRound
                                     text: qsTr("Manage License")
                                     onClicked: root.openLicenseRequested()

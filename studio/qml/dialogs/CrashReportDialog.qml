@@ -26,22 +26,33 @@ AppDialog {
         }
     }
 
-    RowLayout {
+    Rectangle {
         Layout.fillWidth: true
-        spacing: Theme.s4
+        implicitHeight: crashMetaRow.implicitHeight + Theme.s3 * 2
+        radius: Theme.radiusLg
+        color: Theme.bgElevated
+        border.color: Theme.alpha(Theme.danger, 0.30)
+        border.width: 1
 
-        KeyValueRow {
-            Layout.fillWidth: true
-            label: qsTr("Timestamp")
-            value: Diagnostics.crashTime || "—"
-            monospace: true
-        }
-        KeyValueRow {
-            Layout.fillWidth: true
-            label: qsTr("Signal")
-            value: Diagnostics.crashSignal || "SIGSEGV"
-            monospace: true
-            valueColor: Theme.danger
+        RowLayout {
+            id: crashMetaRow
+            anchors.fill: parent
+            anchors.margins: Theme.s3
+            spacing: Theme.s4
+
+            KeyValueRow {
+                Layout.fillWidth: true
+                label: qsTr("Timestamp")
+                value: Diagnostics.crashTime || "—"
+                monospace: true
+            }
+            KeyValueRow {
+                Layout.fillWidth: true
+                label: qsTr("Signal")
+                value: Diagnostics.crashSignal || "SIGSEGV"
+                monospace: true
+                valueColor: Theme.danger
+            }
         }
     }
 
@@ -52,13 +63,24 @@ AppDialog {
         text: Diagnostics.crashBacktrace || qsTr("No stack frames captured.")
     }
 
-    Text {
+    RowLayout {
         Layout.fillWidth: true
-        text: qsTr("API keys, workspace paths, and firmware binaries are automatically scrubbed before export or submission.")
-        font.family: Theme.fontSans
-        font.pixelSize: Theme.textXs
-        color: Theme.textMuted
-        wrapMode: Text.WordWrap
+        spacing: Theme.s2
+
+        Icon {
+            name: Icons.shieldCheck
+            size: 14
+            color: Theme.hueEmerald
+        }
+
+        Text {
+            Layout.fillWidth: true
+            text: qsTr("API keys, workspace paths, and firmware binaries are automatically scrubbed before export or submission.")
+            font.family: Theme.fontSans
+            font.pixelSize: Theme.textXs
+            color: Theme.textMuted
+            wrapMode: Text.WordWrap
+        }
     }
 
     footer: [
@@ -77,8 +99,7 @@ AppDialog {
                 root.close()
             }
         },
-        AppButton {
-            variant: "primary"
+        GradientButton {
             iconName: Icons.send
             text: qsTr("Send Report")
             onClicked: {
