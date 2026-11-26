@@ -11,3 +11,6 @@ examples/*/build/
 dist/
 *.tar.gz
 *.zip
+studio/build/
+build-tools/
+studio/tests/data/*.tmp

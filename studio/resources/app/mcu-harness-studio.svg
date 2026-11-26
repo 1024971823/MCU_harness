@@ -1,0 +1,47 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="512" height="512" viewBox="0 0 512 512" fill="none">
+  <defs>
+    <linearGradient id="bgGrad" x1="0" y1="0" x2="512" y2="512" gradientUnits="userSpaceOnUse">
+      <stop offset="0%" stop-color="#3B6CFF"/>
+      <stop offset="100%" stop-color="#7B5CF0"/>
+    </linearGradient>
+    <linearGradient id="highlightGrad" x1="256" y1="0" x2="256" y2="512" gradientUnits="userSpaceOnUse">
+      <stop offset="0%" stop-color="#FFFFFF" stop-opacity="0.18"/>
+      <stop offset="45%" stop-color="#FFFFFF" stop-opacity="0.0"/>
+    </linearGradient>
+  </defs>
+
+  <!-- Rounded app tile -->
+  <rect x="0" y="0" width="512" height="512" rx="112" fill="url(#bgGrad)"/>
+  <rect x="0" y="0" width="512" height="512" rx="112" fill="url(#highlightGrad)"/>
+
+  <!-- 4-side microchip pins (thick >= 28px strokes for 16px crispness) -->
+  <g stroke="#FFFFFF" stroke-width="28" stroke-linecap="round">
+    <!-- Top pins -->
+    <line x1="184" y1="78" x2="184" y2="130"/>
+    <line x1="256" y1="78" x2="256" y2="130"/>
+    <line x1="328" y1="78" x2="328" y2="130"/>
+    <!-- Bottom pins -->
+    <line x1="184" y1="382" x2="184" y2="434"/>
+    <line x1="256" y1="382" x2="256" y2="434"/>
+    <line x1="328" y1="382" x2="328" y2="434"/>
+    <!-- Left pins -->
+    <line x1="78" y1="184" x2="130" y2="184"/>
+    <line x1="78" y1="256" x2="130" y2="256"/>
+    <line x1="78" y1="328" x2="130" y2="328"/>
+    <!-- Right pins -->
+    <line x1="382" y1="184" x2="434" y2="184"/>
+    <line x1="382" y1="256" x2="434" y2="256"/>
+    <line x1="382" y1="328" x2="434" y2="328"/>
+  </g>
+
+  <!-- Microchip outer package -->
+  <rect x="132" y="132" width="248" height="248" rx="32" fill="#FFFFFF" fill-opacity="0.08" stroke="#FFFFFF" stroke-width="30"/>
+
+  <!-- Inner silicon die frame -->
+  <rect x="190" y="190" width="132" height="132" rx="18" stroke="#FFFFFF" stroke-width="20" stroke-opacity="0.45"/>
+
+  <!-- Crisp 4-point AI spark inside top-right quadrant -->
+  <path d="M294 196 C298 232 308 242 344 246 C308 250 298 260 294 296 C290 260 280 250 244 246 C280 242 290 232 294 196 Z" fill="#FFFFFF"/>
+  <!-- Bold corner probe dot bottom-left inside die -->
+  <circle cx="228" cy="284" r="16" fill="#FFFFFF"/>
+</svg>
