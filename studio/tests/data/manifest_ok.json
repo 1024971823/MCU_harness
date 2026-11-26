@@ -1,0 +1,18 @@
+{
+  "schema": 1,
+  "channel": "stable",
+  "version": "1.2.3",
+  "released": "2026-01-01T00:00:00Z",
+  "notes": {
+    "en": "- Test release notes EN\n",
+    "zh_CN": "- 测试发布说明 ZH\n"
+  },
+  "min_supported": "1.0.0",
+  "assets": {
+    "linux-x64": {
+      "url": "https://example.invalid/mcu-harness-studio-1.2.3.tar.gz",
+      "sha256": "684a34e3c2ab022a18207035da97abef5565dbdf41a7b9a65b30cb11cfd77e7e",
+      "size": 36
+    }
+  }
+}
