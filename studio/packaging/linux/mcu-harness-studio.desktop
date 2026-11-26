@@ -1,0 +1,15 @@
+[Desktop Entry]
+Type=Application
+Name=MCU Harness Studio
+Name[zh_CN]=MCU Harness Studio
+GenericName=Embedded AI & Hardware Debugging IDE
+GenericName[zh_CN]=嵌入式 AI 与硬件闭环调试工作台
+Comment=Commercial-grade Cortex-M AI agent harness, CMSIS-SVD register decoder, RTT/UART telemetry, and HITL safety interlock
+Comment[zh_CN]=商业级 Cortex-M 嵌入式 AI 智能体开发、CMSIS-SVD 寄存器解码、RTT/UART 遥测与 HITL 硬件安全工作台
+Exec=mcu-harness-studio %f
+Icon=mcu-harness-studio
+Terminal=false
+Categories=Development;Electronics;IDE;
+Keywords=MCU;STM32;Embedded;JLink;OpenOCD;Debugging;RTOS;AI;
+StartupNotify=true
+StartupWMClass=mcu-harness-studio

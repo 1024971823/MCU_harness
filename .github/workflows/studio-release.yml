@@ -1,0 +1,117 @@
+name: MCU Harness Studio Release
+
+on:
+  push:
+    tags:
+      - "v*"
+  workflow_dispatch:
+
+jobs:
+  linux-x86_64:
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Install system build & Qt runtime tools
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            cmake ninja-build python3 \
+            libgl1-mesa-dev libvulkan-dev libxkbcommon-dev \
+            fuse3 libfuse2t64 curl
+
+      - name: Install Qt 6.8+
+        uses: jurplel/install-qt-action@v4
+        with:
+          version: "6.8.2"
+          modules: "qt5compat qtshadertools"
+          tools: ""
+
+      - name: Fetch third-party assets & AppImage tools
+        run: bash tools/fetch_third_party.sh
+
+      - name: Configure & Build Release
+        working-directory: studio
+        run: |
+          cmake --preset release
+          cmake --build --preset release
+
+      - name: Run QtTests & Python tests
+        run: |
+          ctest --test-dir studio/build/release --output-on-failure
+          PYTHONPATH=src python3 -m unittest discover -s tests -p "test_agent_*.py" -v
+          PYTHONPATH=src python3 -m unittest tests.test_vendor_tools -v
+
+      - name: Build Debian package (.deb)
+        working-directory: studio
+        run: cmake --build --preset release --target package
+
+      - name: Build AppImage
+        run: bash studio/packaging/appimage/build_appimage.sh
+
+      - name: Upload Linux release artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: mcu-harness-studio-linux-x86_64
+          path: |
+            dist/*.deb
+            dist/*.AppImage
+
+  windows-x86_64:
+    runs-on: windows-2022
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup MSVC environment
+        uses: ilammy/msvc-dev-cmd@v1
+
+      - name: Install Qt 6.8+ (MSVC 2022 64-bit)
+        uses: jurplel/install-qt-action@v4
+        with:
+          version: "6.8.2"
+          arch: "win64_msvc2022_64"
+          modules: "qt5compat qtshadertools"
+
+      - name: Fetch third-party fonts, icons & TweetNaCl
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force -Path studio\third_party\tweetnacl | Out-Null
+          curl.exe -fL https://tweetnacl.cr.yp.to/20140427/tweetnacl.c -o studio\third_party\tweetnacl\tweetnacl.c
+          curl.exe -fL https://tweetnacl.cr.yp.to/20140427/tweetnacl.h -o studio\third_party\tweetnacl\tweetnacl.h
+          $pythonExe = (Get-Command python).Source
+          Write-Host "Using $pythonExe"
+
+      - name: Configure, Build & Test (Windows)
+        working-directory: studio
+        run: |
+          cmake -G Ninja -DCMAKE_BUILD_TYPE=Release -B build/release -S .
+          cmake --build build/release
+          ctest --test-dir build/release --output-on-failure
+
+      - name: Stage Windows bundle with windeployqt & embeddable Python 3.12
+        shell: pwsh
+        run: |
+          $stage = "studio\build\windows-stage"
+          New-Item -ItemType Directory -Force -Path "$stage\engine", "$stage\python", "$stage\icons", "$stage\licenses" | Out-Null
+          Copy-Item "studio\build\release\mcu-harness-studio.exe" "$stage\"
+          Copy-Item "studio\build\release\icons\mcu-harness-studio.ico" "$stage\icons\"
+          Copy-Item -Recurse "src\mcu_harness" "$stage\engine\mcu_harness"
+          Copy-Item "studio\resources\fonts\*-OFL.txt" "$stage\licenses\"
+          Copy-Item "studio\resources\icons\LUCIDE-LICENSE.txt" "$stage\licenses\"
+          windeployqt --release --qmldir studio\qml "$stage\mcu-harness-studio.exe"
+          curl.exe -fL https://www.python.org/ftp/python/3.12.8/python-3.12.8-embed-amd64.zip -o python-embed.zip
+          Expand-Archive python-embed.zip -DestinationPath "$stage\python" -Force
+
+      - name: Build Inno Setup 6 Installer
+        shell: pwsh
+        run: |
+          choco install innosetup -y --no-progress
+          & "C:\Program Files (x86)\Inno Setup 6\ISCC.exe" /DMyAppVersion=1.0.0 studio\packaging\windows\installer.iss
+
+      - name: Upload Windows installer artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: mcu-harness-studio-windows-x86_64
+          path: dist\*-setup.exe

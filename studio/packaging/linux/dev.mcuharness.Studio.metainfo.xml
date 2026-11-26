@@ -1,0 +1,38 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<component type="desktop-application">
+  <id>dev.mcuharness.Studio</id>
+  <metadata_license>FSFAP</metadata_license>
+  <project_license>LicenseRef-Proprietary</project_license>
+  <name>MCU Harness Studio</name>
+  <summary>Commercial-grade embedded MCU debugging and firmware AI agent harness</summary>
+  <summary xml:lang="zh_CN">商业级嵌入式 MCU 闭环调试与固件开发 AI 工作台</summary>
+  <description>
+    <p>
+      MCU Harness Studio unifies multi-provider AI coding and debugging workflows with direct,
+      non-halting hardware introspection over J-Link and OpenOCD, CMSIS-SVD bitfield decoding,
+      SEGGER RTT and POSIX UART log streaming, DWARF Live Watch, RTOS stack inspection,
+      and an unbypassable Human-in-the-Loop (HITL) hardware safety interlock.
+    </p>
+  </description>
+  <launchable type="desktop-id">mcu-harness-studio.desktop</launchable>
+  <url type="homepage">https://mcuharness.dev</url>
+  <developer id="dev.mcuharness">
+    <name>Lannuo</name>
+  </developer>
+  <provides>
+    <binary>mcu-harness-studio</binary>
+  </provides>
+  <screenshots>
+    <screenshot type="default">
+      <caption>Agent workbench with hardware telemetry and safety interlock</caption>
+    </screenshot>
+  </screenshots>
+  <releases>
+    <release version="1.0.0" date="2026-11-26">
+      <description>
+        <p>Initial commercial release of MCU Harness Studio on Qt 6 QML and C++20.</p>
+      </description>
+    </release>
+  </releases>
+  <content_rating type="oars-1.1" />
+</component>
