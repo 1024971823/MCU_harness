@@ -1,3 +1,4 @@
+pragma ComponentBehavior: Bound
 import QtQuick
 import QtQuick.Controls.Basic
 import QtQuick.Dialogs
@@ -6,6 +7,7 @@ import McuStudio
 import "components"
 import "shell"
 import "pages"
+import "plugins"
 import "dialogs"
 
 ApplicationWindow {
@@ -22,8 +24,11 @@ ApplicationWindow {
     title: qsTr("MCU Harness Studio") + (projectBasename.length > 0 ? " — " + projectBasename : "")
 
     property int activePage: 0
-    property bool sidebarVisible: Settings.sidebarVisible !== undefined ? Settings.sidebarVisible : true
-    property bool bottomPanelVisible: Settings.bottomPanelVisible !== undefined ? Settings.bottomPanelVisible : false
+    property bool threadsVisible: true
+    property bool pluginPanelVisible: false
+    property string activePlugin: "probe"
+    property bool pluginMaximized: false
+    property int _preMaximizePage: 0
 
     // Expose dialog/page references for ScreenshotDriver & Shortcuts
     readonly property alias approvalDialog: approvalDlg
@@ -35,16 +40,108 @@ ApplicationWindow {
     readonly property alias aboutDialog: aboutDlg
     readonly property alias settingsPage: settingsPg
 
+    onThreadsVisibleChanged: {
+        if (Settings.threadsPanelVisible !== threadsVisible) {
+            Settings.setThreadsPanelVisible(threadsVisible)
+        }
+    }
+
+    onPluginPanelVisibleChanged: {
+        if (Settings.pluginPanelVisible !== pluginPanelVisible) {
+            Settings.setPluginPanelVisible(pluginPanelVisible)
+        }
+    }
+
+    onActivePluginChanged: {
+        if (Settings.activePlugin !== activePlugin) {
+            Settings.setActivePlugin(activePlugin)
+        }
+    }
+
     function showToast(msg, level, actionText, cb) {
         toastHost.show(msg, level || "info", actionText || "", cb)
     }
 
     function openPage(idx) {
+        if (idx !== 5) {
+            pluginMaximized = false
+        }
         activePage = idx
+    }
+
+    function firstEnabledPluginId() {
+        var plugs = PluginRegistry.plugins
+        for (var i = 0; i < plugs.length; ++i) {
+            if (PluginRegistry.isEnabled(plugs[i].id)) return plugs[i].id
+        }
+        return "probe"
+    }
+
+    function openPlugin(id) {
+        var targetId = (id && PluginRegistry.byId(id)) ? id : firstEnabledPluginId()
+        activePlugin = targetId
+        Settings.setActivePlugin(targetId)
+        if (pluginMaximized) {
+            pluginMaximized = false
+            activePage = (_preMaximizePage >= 0 && _preMaximizePage <= 4) ? _preMaximizePage : 0
+        }
+        pluginPanelVisible = true
+        Settings.setPluginPanelVisible(true)
+    }
+
+    function togglePluginPanel() {
+        if (pluginMaximized) {
+            restorePlugin()
+            pluginPanelVisible = false
+            return
+        }
+        if (!pluginPanelVisible) {
+            if (!activePlugin || !PluginRegistry.byId(activePlugin)) {
+                activePlugin = firstEnabledPluginId()
+            }
+            pluginPanelVisible = true
+        } else {
+            pluginPanelVisible = false
+        }
+    }
+
+    function handlePluginBarClick(id) {
+        if (pluginMaximized) {
+            if (activePlugin === id) {
+                restorePlugin()
+            } else {
+                activePlugin = id
+            }
+            return
+        }
+        if (pluginPanelVisible && activePlugin === id) {
+            pluginPanelVisible = false
+        } else {
+            openPlugin(id)
+        }
+    }
+
+    function maximizePlugin() {
+        if (activePage !== 5) {
+            _preMaximizePage = activePage
+        }
+        if (!activePlugin || !PluginRegistry.byId(activePlugin)) {
+            activePlugin = firstEnabledPluginId()
+        }
+        pluginMaximized = true
+        activePage = 5
+    }
+
+    function restorePlugin() {
+        pluginMaximized = false
+        activePage = (_preMaximizePage >= 0 && _preMaximizePage <= 4) ? _preMaximizePage : 0
     }
 
     Component.onCompleted: {
         if (!AppInfo.screenshotMode) {
+            if (Settings.threadsPanelVisible !== undefined) threadsVisible = Settings.threadsPanelVisible
+            if (Settings.pluginPanelVisible !== undefined) pluginPanelVisible = Settings.pluginPanelVisible
+            if (Settings.activePlugin && Settings.activePlugin.length > 0) activePlugin = Settings.activePlugin
             if (Settings.firstRunCompleted === false) {
                 onboardingDlg.open()
             } else if (Diagnostics.hasCrashReport) {
@@ -72,54 +169,44 @@ ApplicationWindow {
     Shortcut {
         sequence: "Ctrl+B"
         context: Qt.ApplicationShortcut
-        onActivated: win.sidebarVisible = !win.sidebarVisible
+        onActivated: win.threadsVisible = !win.threadsVisible
     }
     Shortcut {
         sequence: "Ctrl+J"
         context: Qt.ApplicationShortcut
-        onActivated: win.bottomPanelVisible = !win.bottomPanelVisible
+        onActivated: win.togglePluginPanel()
     }
     Shortcut {
         sequence: "Ctrl+,"
         context: Qt.ApplicationShortcut
-        onActivated: win.activePage = 6
+        onActivated: win.openPage(4)
     }
     Shortcut {
         sequence: "Ctrl+1"
         context: Qt.ApplicationShortcut
-        onActivated: win.activePage = 0
+        onActivated: win.openPage(0)
     }
     Shortcut {
         sequence: "Ctrl+2"
         context: Qt.ApplicationShortcut
-        onActivated: win.activePage = 1
+        onActivated: win.openPage(1)
     }
     Shortcut {
         sequence: "Ctrl+3"
         context: Qt.ApplicationShortcut
-        onActivated: win.activePage = 2
+        onActivated: win.openPage(2)
     }
     Shortcut {
         sequence: "Ctrl+4"
         context: Qt.ApplicationShortcut
-        onActivated: win.activePage = 3
-    }
-    Shortcut {
-        sequence: "Ctrl+5"
-        context: Qt.ApplicationShortcut
-        onActivated: win.activePage = 4
-    }
-    Shortcut {
-        sequence: "Ctrl+6"
-        context: Qt.ApplicationShortcut
-        onActivated: win.activePage = 5
+        onActivated: win.openPage(3)
     }
     Shortcut {
         sequence: "Ctrl+L"
         context: Qt.ApplicationShortcut
         onActivated: {
-            win.activePage = 0
-            agentPg.focusComposer()
+            win.openPage(0)
+            chatPg.focusComposer()
         }
     }
     Shortcut {
@@ -127,8 +214,8 @@ ApplicationWindow {
         context: Qt.ApplicationShortcut
         onActivated: {
             Workbench.newSession()
-            win.activePage = 0
-            win.showToast(qsTr("Started a new Agent session"), "info")
+            win.openPage(0)
+            win.showToast(qsTr("Started a new chat"), "info")
         }
     }
     Shortcut {
@@ -152,6 +239,7 @@ ApplicationWindow {
             else if (aboutDlg.opened) aboutDlg.close()
             else if (licenseDlg.opened) licenseDlg.close()
             else if (updateDlg.opened) updateDlg.close()
+            else if (win.pluginMaximized) win.restorePlugin()
             else if (Workbench.turnRunning) Workbench.abortTurn()
         }
     }
@@ -165,6 +253,26 @@ ApplicationWindow {
         }
     }
 
+    // Internal components for full-screen maximized plugin page (StackLayout index 5)
+    Component { id: maxProbeComp; ProbePlugin {} }
+    Component { id: maxWatchComp; WatchPlugin {} }
+    Component { id: maxRtosComp; RtosPlugin {} }
+    Component { id: maxConsoleComp; ConsolePlugin {} }
+    Component { id: maxAuditComp; AuditPlugin {} }
+    Component { id: maxEngineComp; EngineLogPlugin {} }
+
+    function maxComponentForPlugin(id) {
+        switch (id) {
+        case "probe":   return maxProbeComp
+        case "watch":   return maxWatchComp
+        case "rtos":    return maxRtosComp
+        case "console": return maxConsoleComp
+        case "audit":   return maxAuditComp
+        case "engine":  return maxEngineComp
+        default:        return maxProbeComp
+        }
+    }
+
     ColumnLayout {
         anchors.fill: parent
         spacing: 0
@@ -174,83 +282,93 @@ ApplicationWindow {
             Layout.fillHeight: true
             spacing: 0
 
-            ActivityBar {
+            NavRail {
                 Layout.fillHeight: true
                 activePage: win.activePage
-                sidebarVisible: win.sidebarVisible
-                bottomPanelVisible: win.bottomPanelVisible
                 pendingApprovalsCount: Workbench.pendingApprovalsCount || 0
-                onPageSelected: function(idx) { win.activePage = idx }
-                onToggleSidebar: win.sidebarVisible = !win.sidebarVisible
-                onToggleBottomPanel: win.bottomPanelVisible = !win.bottomPanelVisible
-                onOpenCommandPalette: cmdPalette.openPalette()
+                onPageSelected: function(idx) { win.openPage(idx) }
+                onOpenLicenseRequested: licenseDlg.open()
             }
 
-            SplitView {
+            ColumnLayout {
                 Layout.fillWidth: true
                 Layout.fillHeight: true
-                orientation: Qt.Horizontal
+                spacing: 0
 
-                handle: Rectangle {
-                    implicitWidth: 3
-                    color: SplitHandle.hovered ? Theme.accent : "transparent"
-                }
-
-                SideBar {
-                    visible: win.sidebarVisible
-                    SplitView.preferredWidth: 256
-                    SplitView.minimumWidth: 200
-                    SplitView.maximumWidth: 380
-                    SplitView.fillHeight: true
+                TopBar {
+                    Layout.fillWidth: true
+                    activePage: win.activePage
+                    threadsVisible: win.threadsVisible
+                    pluginPanelVisible: win.pluginPanelVisible && !win.pluginMaximized
                     onOpenProjectRequested: projectFolderDlg.open()
-                    onLaunchPlaybook: function(cmdText) {
-                        win.activePage = 0
-                        agentPg.insertPlaybook(cmdText)
-                    }
-                    onLoadSessionRequested: function(sid) {
-                        Workbench.loadSession(sid)
-                        win.activePage = 0
-                    }
-                    onNavigateToPage: function(idx) { win.activePage = idx }
-                    onCollapseRequested: win.sidebarVisible = false
+                    onToggleThreadsRequested: win.threadsVisible = !win.threadsVisible
+                    onTogglePluginPanelRequested: win.togglePluginPanel()
+                    onOpenCommandPaletteRequested: cmdPalette.openPalette()
                 }
 
-                SplitView {
-                    SplitView.fillWidth: true
-                    SplitView.fillHeight: true
-                    orientation: Qt.Vertical
+                RowLayout {
+                    Layout.fillWidth: true
+                    Layout.fillHeight: true
+                    spacing: 0
 
-                    handle: Rectangle {
-                        implicitHeight: 3
-                        color: SplitHandle.hovered ? Theme.accent : "transparent"
+                    ThreadsPanel {
+                        Layout.fillHeight: true
+                        visible: win.activePage === 0 && win.threadsVisible
+                        onNewChatRequested: {
+                            Workbench.newSession()
+                            win.openPage(0)
+                            win.showToast(qsTr("Started a new chat"), "info")
+                        }
+                        onLoadSessionRequested: function(sid) {
+                            Workbench.loadSession(sid)
+                            win.openPage(0)
+                        }
+                        onOpenProbeRequested: win.openPlugin("probe")
                     }
 
                     StackLayout {
-                        SplitView.fillWidth: true
-                        SplitView.fillHeight: true
+                        Layout.fillWidth: true
+                        Layout.fillHeight: true
                         currentIndex: win.activePage
 
-                        AgentPage {
-                            id: agentPg
+                        // 0: Chat
+                        ChatPage {
+                            id: chatPg
                             onOpenSettingsRequested: function(section) {
-                                win.activePage = 6
+                                win.openPage(4)
                                 if (section) settingsPg.activeSection = section
                             }
                             onOpenApprovalRequested: {
                                 approvalDlg.demoOverride = null
                                 approvalDlg.open()
                             }
-                            onOpenLicenseRequested: licenseDlg.open()
+                            onOpenPluginRequested: function(pluginId) {
+                                win.openPlugin(pluginId)
+                            }
                         }
-                        HardwarePage {
-                            onOpenToast: function(msg, lvl) { win.showToast(msg, lvl) }
+
+                        // 1: Skills
+                        SkillsPage {
+                            onRunSkillRequested: function(cmd) {
+                                win.openPage(0)
+                                chatPg.insertSkill(cmd)
+                                chatPg.focusComposer()
+                            }
                         }
-                        WatchPage {}
-                        RtosPage {}
-                        SessionsPage {
-                            onSessionOpened: win.activePage = 0
+
+                        // 2: Plugins
+                        PluginsPage {
+                            onOpenPluginRequested: function(pluginId) {
+                                win.openPlugin(pluginId)
+                            }
                         }
-                        AuditPage {}
+
+                        // 3: History
+                        HistoryPage {
+                            onSessionOpened: win.openPage(0)
+                        }
+
+                        // 4: Settings
                         SettingsPage {
                             id: settingsPg
                             onOpenLicenseRequested: licenseDlg.open()
@@ -258,23 +376,77 @@ ApplicationWindow {
                             onOpenAboutRequested: aboutDlg.open()
                             onOpenToast: function(msg, lvl) { win.showToast(msg, lvl) }
                         }
+
+                        // 5: Maximized Plugin View
+                        Item {
+                            id: maximizedPluginPage
+                            readonly property var maxMeta: PluginRegistry.byId(win.activePlugin) || PluginRegistry.plugins[0]
+
+                            ColumnLayout {
+                                anchors.fill: parent
+                                spacing: 0
+
+                                PanelHeader {
+                                    Layout.fillWidth: true
+                                    icon: maximizedPluginPage.maxMeta ? maximizedPluginPage.maxMeta.icon : Icons.cpu
+                                    hue: maximizedPluginPage.maxMeta ? maximizedPluginPage.maxMeta.hue : Theme.hueAmber
+                                    title: maximizedPluginPage.maxMeta ? maximizedPluginPage.maxMeta.name : qsTr("Plugin")
+                                    maximizable: true
+                                    maximized: true
+                                    closable: true
+                                    onMaximizeRequested: win.restorePlugin()
+                                    onCloseRequested: {
+                                        win.restorePlugin()
+                                        win.pluginPanelVisible = false
+                                    }
+                                }
+
+                                Loader {
+                                    id: maxPluginLoader
+                                    Layout.fillWidth: true
+                                    Layout.fillHeight: true
+                                    active: win.activePage === 5 && win.pluginMaximized && win.activePlugin.length > 0
+                                    sourceComponent: win.maxComponentForPlugin(win.activePlugin)
+                                }
+                            }
+
+                            Connections {
+                                target: maxPluginLoader.item
+                                ignoreUnknownSignals: true
+                                function onToastRequested(msg, level) {
+                                    win.showToast(msg, level)
+                                }
+                            }
+                        }
                     }
 
-                    BottomPanel {
-                        visible: win.bottomPanelVisible
-                        SplitView.preferredHeight: 230
-                        SplitView.minimumHeight: 140
-                        SplitView.maximumHeight: 480
-                        SplitView.fillWidth: true
-                        onCloseRequested: win.bottomPanelVisible = false
+                    PluginPanel {
+                        Layout.fillHeight: true
+                        activePlugin: win.activePlugin
+                        panelOpen: win.pluginPanelVisible && !win.pluginMaximized && win.activePage !== 5
+                        onMaximizeRequested: win.maximizePlugin()
+                        onCloseRequested: win.pluginPanelVisible = false
+                        onToastRequested: function(msg, level) { win.showToast(msg, level) }
                     }
                 }
+            }
+
+            PluginBar {
+                Layout.fillHeight: true
+                activePlugin: win.activePlugin
+                pluginPanelVisible: win.pluginPanelVisible || win.pluginMaximized
+                onPluginClicked: function(pluginId) { win.handlePluginBarClick(pluginId) }
+                onOpenPluginsPageRequested: win.openPage(2)
             }
         }
 
         StatusBar {
             Layout.fillWidth: true
-            onNavigateToPage: function(idx) { win.activePage = idx }
+            onOpenPluginRequested: function(pluginId) { win.openPlugin(pluginId) }
+            onOpenSettingsSection: function(section) {
+                win.openPage(4)
+                if (section) settingsPg.activeSection = section
+            }
             onOpenApprovalDialog: {
                 approvalDlg.demoOverride = null
                 approvalDlg.open()
@@ -299,10 +471,11 @@ ApplicationWindow {
     CommandPalette {
         id: cmdPalette
         onExecuteAction: function(actionId, payload) {
-            if (actionId === "nav") win.activePage = payload
-            else if (actionId === "toggleSidebar") win.sidebarVisible = !win.sidebarVisible
-            else if (actionId === "toggleBottom") win.bottomPanelVisible = !win.bottomPanelVisible
-            else if (actionId === "newSession") { Workbench.newSession(); win.activePage = 0 }
+            if (actionId === "nav") win.openPage(payload)
+            else if (actionId === "openPlugin") win.openPlugin(payload)
+            else if (actionId === "toggleThreads") win.threadsVisible = !win.threadsVisible
+            else if (actionId === "togglePluginPanel") win.togglePluginPanel()
+            else if (actionId === "newSession") { Workbench.newSession(); win.openPage(0) }
             else if (actionId === "openProject") projectFolderDlg.open()
             else if (actionId === "refresh") Workbench.refreshSnapshot()
             else if (actionId === "theme") Settings.setTheme(Theme.isDark ? "light" : "dark")
@@ -310,7 +483,11 @@ ApplicationWindow {
             else if (actionId === "license") licenseDlg.open()
             else if (actionId === "updates") updateDlg.open()
             else if (actionId === "about") aboutDlg.open()
-            else if (actionId === "playbook") { win.activePage = 0; agentPg.insertPlaybook(payload + " ") }
+            else if (actionId === "playbook") {
+                win.openPage(0)
+                chatPg.insertSkill(payload + " ")
+                chatPg.focusComposer()
+            }
             else if (actionId === "probeConnect") Workbench.probeConnect(Settings.probeBackend || "jlink")
             else if (actionId === "probeDisconnect") Workbench.probeDisconnect()
             else if (actionId === "probeHalt") Workbench.probeHalt()

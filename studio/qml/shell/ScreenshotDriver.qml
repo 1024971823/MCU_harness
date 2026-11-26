@@ -21,6 +21,7 @@ QtObject {
     function gotoState(state) {
         if (!mainWindow) return
         closeAllOverlays()
+        mainWindow.pluginMaximized = false
 
         if (typeof Workbench.seedDemoState === "function") {
             Workbench.seedDemoState(state)
@@ -29,16 +30,71 @@ QtObject {
         switch (state) {
         case "agent-empty":
             mainWindow.activePage = 0
-            mainWindow.sidebarVisible = true
-            mainWindow.bottomPanelVisible = false
+            mainWindow.threadsVisible = true
+            mainWindow.pluginPanelVisible = false
             break
         case "agent-conversation":
             mainWindow.activePage = 0
-            mainWindow.sidebarVisible = true
-            mainWindow.bottomPanelVisible = true
+            mainWindow.threadsVisible = true
+            mainWindow.pluginPanelVisible = false
+            break
+        case "agent-streaming":
+            mainWindow.activePage = 0
+            mainWindow.threadsVisible = true
+            mainWindow.pluginPanelVisible = false
+            break
+        case "plugin-probe":
+            mainWindow.activePage = 0
+            mainWindow.threadsVisible = true
+            mainWindow.activePlugin = "probe"
+            mainWindow.pluginPanelVisible = true
+            break
+        case "plugin-watch":
+            mainWindow.activePage = 0
+            mainWindow.threadsVisible = true
+            mainWindow.activePlugin = "watch"
+            mainWindow.pluginPanelVisible = true
+            break
+        case "plugin-rtos":
+            mainWindow.activePage = 0
+            mainWindow.threadsVisible = true
+            mainWindow.activePlugin = "rtos"
+            mainWindow.pluginPanelVisible = true
+            break
+        case "plugin-console":
+            mainWindow.activePage = 0
+            mainWindow.threadsVisible = true
+            mainWindow.activePlugin = "console"
+            mainWindow.pluginPanelVisible = true
+            break
+        case "plugin-audit":
+            mainWindow.activePage = 0
+            mainWindow.threadsVisible = true
+            mainWindow.activePlugin = "audit"
+            mainWindow.pluginPanelVisible = true
+            break
+        case "plugin-maximized":
+            mainWindow.activePlugin = "watch"
+            mainWindow.pluginPanelVisible = false
+            mainWindow.pluginMaximized = true
+            mainWindow.activePage = 5
+            break
+        case "skills":
+            mainWindow.activePage = 1
+            mainWindow.pluginPanelVisible = false
+            break
+        case "plugins":
+            mainWindow.activePage = 2
+            mainWindow.pluginPanelVisible = false
+            break
+        case "history":
+            mainWindow.activePage = 3
+            mainWindow.pluginPanelVisible = false
             break
         case "approval-danger":
             mainWindow.activePage = 0
+            mainWindow.threadsVisible = true
+            mainWindow.pluginPanelVisible = false
             if (mainWindow.approvalDialog) {
                 mainWindow.approvalDialog.demoOverride = {
                     requestId: "demo-danger-1",
@@ -61,6 +117,8 @@ QtObject {
             break
         case "approval-diff":
             mainWindow.activePage = 0
+            mainWindow.threadsVisible = true
+            mainWindow.pluginPanelVisible = false
             if (mainWindow.approvalDialog) {
                 mainWindow.approvalDialog.demoOverride = {
                     requestId: "demo-diff-1",
@@ -79,49 +137,32 @@ QtObject {
                 mainWindow.approvalDialog.open()
             }
             break
-        case "hardware":
-            mainWindow.activePage = 1
-            mainWindow.sidebarVisible = true
-            mainWindow.bottomPanelVisible = false
-            break
-        case "watch":
-            mainWindow.activePage = 2
-            mainWindow.sidebarVisible = true
-            mainWindow.bottomPanelVisible = false
-            break
-        case "rtos":
-            mainWindow.activePage = 3
-            mainWindow.sidebarVisible = true
-            mainWindow.bottomPanelVisible = false
-            break
-        case "sessions":
-            mainWindow.activePage = 4
-            mainWindow.sidebarVisible = true
-            mainWindow.bottomPanelVisible = false
-            break
-        case "audit":
-            mainWindow.activePage = 5
-            mainWindow.sidebarVisible = true
-            mainWindow.bottomPanelVisible = false
-            break
         case "settings-model":
-            mainWindow.activePage = 6
+            mainWindow.activePage = 4
+            mainWindow.pluginPanelVisible = false
             if (mainWindow.settingsPage) mainWindow.settingsPage.activeSection = "model"
             break
         case "settings-appearance":
-            mainWindow.activePage = 6
+            mainWindow.activePage = 4
+            mainWindow.pluginPanelVisible = false
             if (mainWindow.settingsPage) mainWindow.settingsPage.activeSection = "appearance"
             break
         case "license":
             mainWindow.activePage = 0
+            mainWindow.threadsVisible = true
+            mainWindow.pluginPanelVisible = false
             if (mainWindow.licenseDialog) mainWindow.licenseDialog.open()
             break
         case "update-available":
             mainWindow.activePage = 0
+            mainWindow.threadsVisible = true
+            mainWindow.pluginPanelVisible = false
             if (mainWindow.updateDialog) mainWindow.updateDialog.open()
             break
         case "onboarding-1":
             mainWindow.activePage = 0
+            mainWindow.threadsVisible = true
+            mainWindow.pluginPanelVisible = false
             if (mainWindow.onboardingWizard) {
                 mainWindow.onboardingWizard.stepIndex = 0
                 mainWindow.onboardingWizard.open()
@@ -129,6 +170,8 @@ QtObject {
             break
         case "onboarding-3":
             mainWindow.activePage = 0
+            mainWindow.threadsVisible = true
+            mainWindow.pluginPanelVisible = false
             if (mainWindow.onboardingWizard) {
                 mainWindow.onboardingWizard.stepIndex = 2
                 mainWindow.onboardingWizard.open()
@@ -136,12 +179,16 @@ QtObject {
             break
         case "palette":
             mainWindow.activePage = 0
+            mainWindow.threadsVisible = true
+            mainWindow.pluginPanelVisible = false
             if (mainWindow.commandPalette) {
                 mainWindow.commandPalette.openPalette()
             }
             break
         case "crash":
             mainWindow.activePage = 0
+            mainWindow.threadsVisible = true
+            mainWindow.pluginPanelVisible = false
             if (mainWindow.crashReportDialog) {
                 mainWindow.crashReportDialog.open()
             }
