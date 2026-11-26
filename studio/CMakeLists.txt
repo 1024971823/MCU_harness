@@ -204,6 +204,7 @@ endif()
 set_source_files_properties(
     qml/theme/Theme.qml
     qml/theme/Icons.qml
+    qml/theme/PluginRegistry.qml
     PROPERTIES QT_QML_SINGLETON_TYPE TRUE
 )
 
@@ -211,6 +212,7 @@ set(STUDIO_QML_FILES
     qml/Main.qml
     qml/theme/Theme.qml
     qml/theme/Icons.qml
+    qml/theme/PluginRegistry.qml
     qml/components/AppButton.qml
     qml/components/IconButton.qml
     qml/components/AppTextField.qml
@@ -241,18 +243,43 @@ set(STUDIO_QML_FILES
     qml/components/MarkdownText.qml
     qml/components/KeyValueRow.qml
     qml/components/SettingRow.qml
-    qml/shell/ActivityBar.qml
-    qml/shell/SideBar.qml
-    qml/shell/BottomPanel.qml
+    qml/components/GradientButton.qml
+    qml/components/IconChip.qml
+    qml/components/Pill.qml
+    qml/components/Chip.qml
+    qml/components/AuroraBackdrop.qml
+    qml/components/AgentOrb.qml
+    qml/components/TypingDots.qml
+    qml/components/PanelHeader.qml
+    qml/components/SearchField.qml
+    qml/components/ResizeHandle.qml
+    qml/shell/NavRail.qml
+    qml/shell/TopBar.qml
+    qml/shell/ThreadsPanel.qml
+    qml/shell/PluginBar.qml
+    qml/shell/PluginPanel.qml
     qml/shell/StatusBar.qml
     qml/shell/ScreenshotDriver.qml
-    qml/pages/AgentPage.qml
-    qml/pages/HardwarePage.qml
-    qml/pages/WatchPage.qml
-    qml/pages/RtosPage.qml
-    qml/pages/SessionsPage.qml
-    qml/pages/AuditPage.qml
+    qml/pages/ChatPage.qml
+    qml/pages/SkillsPage.qml
+    qml/pages/PluginsPage.qml
+    qml/pages/HistoryPage.qml
     qml/pages/SettingsPage.qml
+    qml/chat/UserBubble.qml
+    qml/chat/ThinkingBlock.qml
+    qml/chat/ToolStep.qml
+    qml/chat/AnswerBlock.qml
+    qml/chat/NoticeRow.qml
+    qml/chat/ActivityPill.qml
+    qml/chat/Composer.qml
+    qml/chat/ChatEmptyState.qml
+    qml/chat/SkillPicker.qml
+    qml/plugins/ProbePlugin.qml
+    qml/plugins/WatchPlugin.qml
+    qml/plugins/RtosPlugin.qml
+    qml/plugins/ConsolePlugin.qml
+    qml/plugins/AuditPlugin.qml
+    qml/plugins/EngineLogPlugin.qml
     qml/dialogs/CommandPalette.qml
     qml/dialogs/ApprovalDialog.qml
     qml/dialogs/OnboardingWizard.qml
@@ -290,7 +317,7 @@ if(EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/translations/mcu_studio_zh_CN.ts")
         TARGETS mcu-harness-studio
         SOURCE_TARGETS studio_core mcu-harness-studio
         TS_FILES translations/mcu_studio_zh_CN.ts
-        LUPDATE_OPTIONS -extensions cpp,h,qml
+        LUPDATE_OPTIONS -extensions cpp,h,qml -no-obsolete
         RESOURCE_PREFIX "/i18n"
     )
 endif()
