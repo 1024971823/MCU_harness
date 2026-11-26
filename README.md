@@ -1,6 +1,6 @@
 # MCU Agent Harness
 
-把 **编译器、编译数据库、内存版图审计、多后端探针（J-Link / OpenOCD）、SEGGER RTT 与串口 UART、CMSIS-SVD、跨外设因果体检医生、DWARF 无停机结构体 Live Watch、RTOS 内核透视、CoreSight DWT 性能剖析与硬件观察点、逻辑分析仪波形/协议解码、声明式 HIL 自动化回归、Cortex-M 全系死机尸检、分级防砖护栏与可移植代码框架引擎** 统一接入大模型的通用嵌入式研发 Harness。
+把 **编译器、编译数据库、内存版图审计、多后端探针（J-Link / OpenOCD）、SEGGER RTT 与串口 UART、CMSIS-SVD、跨外设因果体检医生、DWARF 无停机结构体 Live Watch、RTOS 内核透视、CoreSight DWT 性能剖析与硬件观察点、逻辑分析仪波形/协议解码、声明式 HIL 自动化回归、Cortex-M 全系死机尸检、分级防砖护栏与可移植代码框架引擎** 统一接入大模型的**独立第三方嵌入式 Agent Harness**（自带多厂商大模型路由、不可绕过硬件 HITL 互锁、终端 TUI `mcu-agent`、原生 Qt 6 QML + C++20 商业级桌面 IDE **MCU Harness Studio** `mcu-harness-studio` 与 NDJSON RPC 桥接 `mcu-rpc`，同时兼容 MCP Server `mcu-harness`）。
 
 设计蓝图见 [docs/spec.md](docs/spec.md)，硬件与安全架构记录见 [docs/hardware_target.md](docs/hardware_target.md)。
 
@@ -11,6 +11,16 @@ MCU_harness/
 ├── pyproject.toml
 ├── src/mcu_harness/
 │   ├── __init__.py
+│   ├── agent/                 # ✅ 独立第三方 Agent Harness（零外部依赖，27 工具 + HITL 互锁 + TUI）
+│   │   ├── llm.py             #    多厂商路由：OpenAI / DeepSeek / Qwen / Ollama / Anthropic / Gemini / Mock
+│   │   ├── workspace_tools.py #    安全工作区读/改/写/检索/Shell（路径防逃逸 + Diff 预览）
+│   │   ├── registry.py        #    统一 27 工具注册表（Schema 无 confirm 开关，强制宿主互锁）
+│   │   ├── interlock.py       #    不可绕过 HITL 互锁门（Option Bytes 硬拒绝 + SVD 位域/Diff 预览）
+│   │   ├── context.py         #    置顶硬件状态卡 + 5 个嵌入式斜杠 Playbook（/crash /doctor /bringup /refactor /hil）
+│   │   ├── runtime.py         #    ReAct 主循环、实时事件总线与 JSONL 会话持久化
+│   │   ├── tui.py             #    mcu-agent 终端交互界面（状态栏 + 流式输出 + 审批弹窗）
+│   │   ├── rpc.py             #    mcu-rpc NDJSON stdio 桥接（stdout 隔离 + 异步 HITL + 零 Token 遥测）
+│   │   └── desktop_launcher.py #   MCU Harness Studio Qt 6 桌面启动器（--build / --install-desktop）
 │   ├── server.py              # ✅ MCP Server 入口（FastMCP stdio，21 个全生命周期标准工具）
 │   ├── config/                # ✅ 工程配置清单（mcu-harness.toml）与零配置自动探测
 │   │   ├── manifest.py        #    自动识别 .ioc / CMake / Makefile / 最新 .elf & .svd
@@ -69,13 +79,65 @@ MCU_harness/
 │       ├── analyzer.py        #    分层依赖检查 + ISR 传递调用图阻塞扫描 + 漏写 volatile 检测
 │       ├── scaffold.py        #    生成 C11 PAL / BSP(cfg-ctx-data-ops+safe_off) / Service 与主机单测
 │       └── cli.py             #    mcu-arch：静态架构体检与可移植代码生成
+├── studio/                    # ✅ MCU Harness Studio（商业级原生 Qt 6 QML + C++20 桌面 IDE）
+│   ├── CMakeLists.txt         #    Qt 6.11 CMake + CPack DEB + 多分辨率图标 + zh_CN 翻译构建
+│   ├── src/                   #    EngineClient (NDJSON RPC)、LicenseManager (Ed25519 + 防回拨试用)、UpdateChecker、CrashHandler
+│   ├── qml/                   #    现代 IDE 外壳（ActivityBar / SideBar / BottomPanel / Ctrl+K 命令面板 / 深浅双主题 / 7 大工作台）
+│   ├── packaging/             #    Linux (.desktop / AppImage)、Windows (Inno Setup installer.iss) 打包脚本
+│   └── tests/                 #    QtTest C++20 + QML 冒烟与 68 张矩阵截图测试
+├── tools/
+│   ├── fetch_third_party.sh   #    拉取 Inter / JetBrains Mono 字体、Lucide 图标、TweetNaCl 与 AppImage 工具
+│   ├── license/mcu_license.py #    离线 Ed25519 授权签发与验签 CLI
+│   └── release/make_update_manifest.py # Ed25519 更新清单签名生成 CLI
 ├── examples/
 │   ├── demo_fw/               # CMake 示例工程
 │   └── demo_make_fw/          # Makefile 示例工程
 └── tests/                     # 单元与端到端集成测试套件（兼容 pytest 与 unittest）
 ```
 
-## 快速开始（Linux，12 个独立命令行工具）
+## 独立第三方 Harness（`mcu-agent` TUI + MCU Harness Studio 原生 Qt 6 桌面 IDE）
+
+无需依赖任何外部 IDE 或第三方 Python SDK（纯标准库即可运行 Python 引擎），内置 **27 个工具**（6 个工作区代码/Shell 工具 + 21 个嵌入式硬件与架构工具）：
+
+1. **多厂商模型路由配置**（优先级：`CLI 参数` > `mcu-harness.toml [agent]` > `~/.config/mcu-harness/agent.toml [agent]` > 环境变量 `MCU_AGENT_PROVIDER` / `MCU_AGENT_MODEL` / `MCU_AGENT_API_KEY`）：
+   - **OpenAI 兼容生态**：`openai`、`deepseek`（`DEEPSEEK_API_KEY`）、`qwen`（`DASHSCOPE_API_KEY`）、`openrouter`（`OPENROUTER_API_KEY`），以及断网实验室本地模型 **`ollama` / `vllm`**；
+   - **Anthropic Claude**：`anthropic`（`ANTHROPIC_API_KEY`）；
+   - **Google Gemini**：`gemini`（`GEMINI_API_KEY`）；
+   - **离线演示**：`--mock-llm`。
+2. **不可绕过的 HITL 硬件安全互锁**：
+   - LLM 看到的 `write_memory`、`flash_firmware`、`run_hil_tests` Schema 中**不存在 `confirm` 参数**，模型无法自行伪造确认；
+   - 写 STM32 Option Bytes / `Product State` 等防砖区间直接由 `HarnessInterlock` **硬拒绝**；写普通外设寄存器前自动解码对应 **CMSIS-SVD 位域变更预览**，改代码前自动生成 **Unified Diff 预览**，交由终端或桌面弹窗人工批准后方可执行。
+3. **商业级 Qt 6 QML + C++20 桌面 IDE（MCU Harness Studio）**：
+   - 现代 IDE 工作区布局（左侧 ActivityBar、可折叠 SideBar 与底部日志/串口 Console、StatusBar、`Ctrl+K` 命令面板、`Ctrl+B` / `Ctrl+J` 面板切换、深浅双主题与英文 / 简体中文 `zh_CN` 实时切换）；
+   - **7 大工作台**：AI Agent（含 5 个嵌入式 Playbooks 与内嵌 HITL 审批卡片）、Hardware（探针 + 串口 + 外设寄存器与引脚体检）、Live Watch（无停机 DWARF 采样趋势图）、RTOS（内核任务与栈高水位）、Sessions（历史会话）、Audit（安全审计与脱敏诊断导出 `.zip`）、Settings（模型/外观/授权/更新）；
+   - **商业化基础设施**：TweetNaCl Ed25519 离线授权码（`MCUH1.<payload>.<sig>`）与 14 天 HMAC-SHA256 防时钟回拨试用、Ed25519 签名更新检查、POSIX/Windows 崩溃捕获与首次引导向导。
+4. **内置嵌入式斜杠工作流（Playbooks）与零 Token 元命令**：
+   - Playbooks：`/crash`（硬故障+RTOS+RTT 破案）、`/doctor [PERIPH]`（四步外设因果联查）、`/bringup`（新板点亮体检）、`/refactor`（架构/ISR 检查与重构）、`/hil <spec>`（编译-烧录-HIL 闭环）；
+   - 本地元命令（0 LLM Token）：`/status`、`/audit`、`/compact`、`/clear`、`/sessions`、`/help`、`/exit`。
+
+```bash
+# 离线零硬件体验独立第三方 Agent TUI
+PYTHONPATH=src python3 -m mcu_harness.agent.tui -p "/status" --mock-llm
+
+# 使用 DeepSeek / Ollama / Gemini 启动交互式终端 TUI
+DEEPSEEK_API_KEY=sk-xxx PYTHONPATH=src python3 -m mcu_harness.agent.tui --provider deepseek --model deepseek-chat /你的/固件工程
+PYTHONPATH=src python3 -m mcu_harness.agent.tui --provider ollama --model qwen2.5-coder:14b /你的/固件工程
+
+# 编译、安装桌面快捷方式并启动 MCU Harness Studio（Qt 6 原生桌面 IDE）
+PYTHONPATH=src python3 -m mcu_harness.agent.desktop_launcher --build
+PYTHONPATH=src python3 -m mcu_harness.agent.desktop_launcher --project-dir /你的/固件工程 --provider deepseek
+PYTHONPATH=src python3 -m mcu_harness.agent.desktop_launcher --install-desktop
+
+# 或直接运行已构建的二进制 / 构建 Linux .deb 与 AppImage 安装包
+./studio/build/release/mcu-harness-studio --mock-llm /你的/固件工程
+cd studio && cmake --build --preset release --target package   # 输出 dist/mcu-harness-studio_1.0.0_amd64.deb
+bash studio/packaging/appimage/build_appimage.sh              # 输出 dist/MCU_Harness_Studio-1.0.0-x86_64.AppImage
+
+# 单独运行 NDJSON stdio RPC 后端（供桌面前端或自动化脚本对接）
+PYTHONPATH=src python3 -m mcu_harness.agent.rpc /你的/固件工程 --mock-llm
+```
+
+## 快速开始（Linux，14 个独立命令行工具）
 
 ```bash
 # 1. 自动扫描任意嵌入式工程并生成 mcu-harness.toml
@@ -170,3 +232,4 @@ PYTHONPATH=src python3 -m mcu_harness.arch.cli check /tmp/demo_portable_fw
 - [x] Phase 3 嵌入式代码框架引擎（分层边界 + ISR 阻塞调用链 + `volatile` 扫描 + 跨芯片 PAL/BSP/Service 脚手架）
 - [x] Phase 4 深度硬件感知与工程分析（DWARF 无停机结构体 `watch_variable`、跨外设因果体检 `diagnose_peripheral`、`.ioc` 真机引脚漂移核验、`.map` 内存/DMA 审计、Makefile `compile_commands.json` 与原生串口 UART 日志流）
 - [x] Phase 5 内核/总线与闭环自动化（`inspect_rtos` 任务与栈水位透视、CoreSight DWT 主频测速/PC 热点/硬件数据观察点 `trace_target`、`capture_logic` 波形与协议解码、`run_hil_tests` 声明式 HIL 自动化测试引擎）
+- [x] Phase 6 独立第三方 Agent Harness（`agent/` 多厂商模型路由 + 27 工具统一注册 + 不可绕过 HITL 互锁 + 斜杠 Playbooks + JSONL 会话持久化 + `mcu-agent` TUI + `mcu-desktop` 原生 Rust 桌面软件 / `mcu-rpc` NDJSON 桥接）

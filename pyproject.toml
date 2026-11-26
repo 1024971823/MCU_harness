@@ -1,7 +1,7 @@
 [project]
 name = "mcu-harness"
-version = "0.4.0"
-description = "通用 MCU 调试、深度硬件感知、RTOS/DWT 剖析、HIL 闭环与可移植架构 Agent Harness"
+version = "0.5.0"
+description = "独立第三方 MCU 调试与固件开发 Agent Harness（多模型路由 / 不可绕过 HITL 互锁 / TUI & 原生 Qt 6 桌面软件 MCU Harness Studio / MCP）"
 readme = "README.md"
 requires-python = ">=3.10"
 dependencies = [
@@ -16,6 +16,10 @@ serial = ["pyserial>=3.5"]
 yaml = ["PyYAML>=6.0"]
 
 [project.scripts]
+# 独立第三方 Agent Harness 终端交互界面、MCU Harness Studio 原生 Qt 6 桌面软件与 NDJSON RPC 桥接
+mcu-agent = "mcu_harness.agent.tui:main"
+mcu-desktop = "mcu_harness.agent.desktop_launcher:main"
+mcu-rpc = "mcu_harness.agent.rpc:main"
 # 工程配置清单自动识别与初始化（mcu-harness.toml）
 mcu-config = "mcu_harness.config.cli:main"
 # 无头编译、编译数据库（compile_commands.json）生成与 .elf/.map 内存版图审计
