@@ -12,20 +12,22 @@ Rectangle {
 
     implicitWidth: 320
     implicitHeight: 96
-    radius: Theme.radiusMd
+    radius: Theme.radiusMd + 2
     color: root.enabled ? Theme.bgElevated : Theme.bgSidebar
     border.color: area.activeFocus ? Theme.accent : (hoverArea.hovered ? Theme.borderStrong : Theme.border)
     border.width: 1
 
-    Behavior on border.color { ColorAnimation { duration: Theme.animFast } }
+    Behavior on border.color {
+        ColorAnimation { duration: Theme.animationsEnabled ? Theme.animFast : 0 }
+    }
     HoverHandler { id: hoverArea }
 
     Rectangle {
         anchors.fill: parent
         anchors.margins: -3
-        radius: Theme.radiusMd + 2
+        radius: root.radius + 2
         color: "transparent"
-        border.color: Theme.accent
+        border.color: Theme.alpha(Theme.accent, 0.45)
         border.width: Theme.focusRingWidth
         visible: area.activeFocus && (area.focusReason === Qt.TabFocusReason || area.focusReason === Qt.BacktabFocusReason)
     }

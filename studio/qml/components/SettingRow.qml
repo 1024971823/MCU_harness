@@ -21,10 +21,12 @@ Rectangle {
     visible: matchesFilter
     Layout.fillWidth: true
     implicitHeight: visible ? row.implicitHeight + Theme.s3 * 2 : 0
-    radius: Theme.radiusMd
+    radius: Theme.radiusMd + 2
     color: rowHover.hovered ? Theme.bgElevated : "transparent"
 
-    Behavior on color { ColorAnimation { duration: Theme.animFast } }
+    Behavior on color {
+        ColorAnimation { duration: Theme.animationsEnabled ? Theme.animFast : 0 }
+    }
     HoverHandler { id: rowHover }
 
     RowLayout {

@@ -47,7 +47,7 @@ FocusScope {
 
     Rectangle {
         anchors.fill: parent
-        radius: Theme.radiusMd
+        radius: Theme.radiusMd + 2
         color: Theme.bgElevated
         border.color: Theme.border
         border.width: 1
@@ -55,7 +55,7 @@ FocusScope {
         Rectangle {
             anchors.fill: parent
             anchors.margins: -3
-            radius: Theme.radiusMd + 2
+            radius: Theme.radiusMd + 4
             color: "transparent"
             border.color: Theme.accent
             border.width: Theme.focusRingWidth
@@ -85,12 +85,14 @@ FocusScope {
 
                     Layout.fillHeight: true
                     implicitWidth: segRow.implicitWidth + Theme.s3 * 2
-                    radius: Theme.radiusSm + 1
+                    radius: Theme.radiusMd
                     color: selected ? Theme.bgSurface : (segHover.hovered ? Theme.bgHover : "transparent")
                     border.color: selected ? Theme.border : "transparent"
                     border.width: selected ? 1 : 0
 
-                    Behavior on color { ColorAnimation { duration: Theme.animFast } }
+                    Behavior on color {
+                        ColorAnimation { duration: Theme.animationsEnabled ? Theme.animFast : 0 }
+                    }
 
                     HoverHandler { id: segHover }
                     TapHandler {

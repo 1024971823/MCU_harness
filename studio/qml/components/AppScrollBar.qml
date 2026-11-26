@@ -19,10 +19,13 @@ ScrollBar {
         opacity: root.activeVisible ? 0.85 : 0.0
 
         Behavior on opacity {
-            NumberAnimation { duration: Theme.animNormal; easing.type: Theme.easingType }
+            NumberAnimation {
+                duration: Theme.animationsEnabled ? Theme.animNormal : 0
+                easing.type: Theme.easingType
+            }
         }
         Behavior on color {
-            ColorAnimation { duration: Theme.animFast }
+            ColorAnimation { duration: Theme.animationsEnabled ? Theme.animFast : 0 }
         }
     }
 

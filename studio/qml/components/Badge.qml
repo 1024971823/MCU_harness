@@ -35,9 +35,9 @@ Rectangle {
 
     readonly property color borderColor: variant === "neutral"
         ? Theme.border
-        : Qt.rgba(fgColor.r, fgColor.g, fgColor.b, 0.35)
+        : Theme.alpha(fgColor, 0.30)
 
-    implicitWidth: row.implicitWidth + (compact ? Theme.s2 : Theme.s3)
+    implicitWidth: row.implicitWidth + (compact ? Theme.s2 + 2 : Theme.s3)
     implicitHeight: compact ? 20 : 24
     radius: Theme.radiusPill
     color: bgColor

@@ -30,7 +30,7 @@ ColumnLayout {
         id: fieldBox
         Layout.fillWidth: true
         implicitHeight: 34
-        radius: Theme.radiusMd
+        radius: Theme.radiusMd + 2
         color: root.enabled ? Theme.bgElevated : Theme.bgSidebar
         border.color: {
             if (root.errorText.length > 0) return Theme.danger
@@ -40,23 +40,25 @@ ColumnLayout {
         }
         border.width: 1
 
-        Behavior on border.color { ColorAnimation { duration: Theme.animFast } }
+        Behavior on border.color {
+            ColorAnimation { duration: Theme.animationsEnabled ? Theme.animFast : 0 }
+        }
 
         HoverHandler { id: hoverArea }
 
         Rectangle {
             anchors.fill: parent
             anchors.margins: -3
-            radius: Theme.radiusMd + 2
+            radius: fieldBox.radius + 2
             color: "transparent"
-            border.color: Theme.accent
+            border.color: Theme.alpha(Theme.accent, 0.45)
             border.width: Theme.focusRingWidth
             visible: input.activeFocus && (input.focusReason === Qt.TabFocusReason || input.focusReason === Qt.BacktabFocusReason)
         }
 
         RowLayout {
             anchors.fill: parent
-            anchors.leftMargin: Theme.s2 + 2
+            anchors.leftMargin: Theme.s2 + 3
             anchors.rightMargin: Theme.s2
             spacing: Theme.s2
 

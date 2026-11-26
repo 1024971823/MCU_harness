@@ -13,7 +13,7 @@ Button {
     property string shortcutText: ""
 
     readonly property int targetHeight: buttonSize === "sm" ? 28 : (buttonSize === "lg" ? 38 : 32)
-    readonly property int hPadding: buttonSize === "sm" ? Theme.s2 : (buttonSize === "lg" ? Theme.s4 : Theme.s3)
+    readonly property int hPadding: buttonSize === "sm" ? Theme.s2 + 2 : (buttonSize === "lg" ? Theme.s4 : Theme.s3)
 
     implicitWidth: Math.max(targetHeight, contentRow.implicitWidth + hPadding * 2)
     implicitHeight: targetHeight
@@ -45,24 +45,30 @@ Button {
 
     readonly property color bdColor: {
         if (!enabled) return variant === "ghost" ? "transparent" : Theme.borderSubtle
-        if (variant === "primary" || variant === "danger" || variant === "ghost") return "transparent"
+        if (variant === "primary") return Theme.alpha("#FFFFFF", 0.12)
+        if (variant === "danger") return Theme.alpha("#FFFFFF", 0.10)
+        if (variant === "ghost") return "transparent"
         if (variant === "outline") return hovered ? Theme.borderStrong : Theme.border
         return hovered ? Theme.borderStrong : Theme.border
     }
 
     background: Rectangle {
-        radius: Theme.radiusMd
+        radius: Theme.radiusMd + 2
         color: root.bgColor
         border.color: root.bdColor
         border.width: root.bdColor === "transparent" ? 0 : 1
 
-        Behavior on color { ColorAnimation { duration: Theme.animFast } }
-        Behavior on border.color { ColorAnimation { duration: Theme.animFast } }
+        Behavior on color {
+            ColorAnimation { duration: Theme.animationsEnabled ? Theme.animFast : 0 }
+        }
+        Behavior on border.color {
+            ColorAnimation { duration: Theme.animationsEnabled ? Theme.animFast : 0 }
+        }
 
         Rectangle {
             anchors.fill: parent
             anchors.margins: -3
-            radius: Theme.radiusMd + 2
+            radius: Theme.radiusMd + 4
             color: "transparent"
             border.color: Theme.accent
             border.width: Theme.focusRingWidth

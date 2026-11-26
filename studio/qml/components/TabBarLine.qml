@@ -52,9 +52,11 @@ Item {
                 Rectangle {
                     anchors.fill: parent
                     anchors.margins: 4
-                    radius: Theme.radiusSm
+                    radius: Theme.radiusMd
                     color: tabHover.hovered && !tabItem.selected ? Theme.bgHover : "transparent"
-                    Behavior on color { ColorAnimation { duration: Theme.animFast } }
+                    Behavior on color {
+                        ColorAnimation { duration: Theme.animationsEnabled ? Theme.animFast : 0 }
+                    }
                 }
 
                 RowLayout {
@@ -91,8 +93,12 @@ Item {
                     anchors.bottom: parent.bottom
                     height: 2
                     radius: 1
-                    color: Theme.accent
                     visible: tabItem.selected
+                    gradient: Gradient {
+                        orientation: Gradient.Horizontal
+                        GradientStop { position: 0.0; color: Theme.brandA }
+                        GradientStop { position: 1.0; color: Theme.brandC }
+                    }
                 }
             }
         }

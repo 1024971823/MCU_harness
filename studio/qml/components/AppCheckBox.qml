@@ -15,17 +15,22 @@ CheckBox {
         implicitHeight: 18
         x: root.leftPadding
         y: (root.height - height) / 2
-        radius: Theme.radiusSm
+        radius: Theme.radiusSm + 1
         color: root.checked ? Theme.accent : (root.hovered ? Theme.bgHover : Theme.bgElevated)
         border.color: root.checked ? Theme.accent : (root.hovered ? Theme.borderStrong : Theme.border)
         border.width: 1
 
-        Behavior on color { ColorAnimation { duration: Theme.animFast } }
+        Behavior on color {
+            ColorAnimation { duration: Theme.animationsEnabled ? Theme.animFast : 0 }
+        }
+        Behavior on border.color {
+            ColorAnimation { duration: Theme.animationsEnabled ? Theme.animFast : 0 }
+        }
 
         Rectangle {
             anchors.fill: parent
             anchors.margins: -3
-            radius: Theme.radiusSm + 2
+            radius: Theme.radiusSm + 3
             color: "transparent"
             border.color: Theme.accent
             border.width: Theme.focusRingWidth

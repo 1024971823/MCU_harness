@@ -30,7 +30,7 @@ Rectangle {
         Rectangle {
             id: headerBar
             Layout.fillWidth: true
-            Layout.preferredHeight: 28
+            Layout.preferredHeight: 30
             color: Theme.bgElevated
             topLeftRadius: Theme.radiusLg
             topRightRadius: Theme.radiusLg
@@ -46,6 +46,7 @@ Rectangle {
                     text: root.language.length > 0 ? root.language : qsTr("Code")
                     font.family: Theme.fontMono
                     font.pixelSize: Theme.textXs
+                    font.weight: Theme.weightMedium
                     color: Theme.textSecondary
                     elide: Text.ElideRight
                 }

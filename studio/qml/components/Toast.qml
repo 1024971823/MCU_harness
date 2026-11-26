@@ -31,34 +31,40 @@ Rectangle {
 
     implicitWidth: 340
     implicitHeight: row.implicitHeight + Theme.s3 * 2
-    radius: Theme.radiusLg
+    radius: Theme.radiusLg + 2
     color: Theme.bgSurface
     border.color: Theme.borderStrong
     border.width: 1
 
-    Rectangle {
+    Item {
         anchors.left: parent.left
         anchors.top: parent.top
         anchors.bottom: parent.bottom
         width: 3
-        topLeftRadius: Theme.radiusLg
-        bottomLeftRadius: Theme.radiusLg
-        color: root.accentColor
+        clip: true
+
+        Rectangle {
+            width: root.radius * 2
+            height: parent.height
+            radius: root.radius
+            color: root.accentColor
+        }
     }
 
     RowLayout {
         id: row
         anchors.fill: parent
-        anchors.leftMargin: Theme.s3 + 3
+        anchors.leftMargin: Theme.s3 + 4
         anchors.rightMargin: Theme.s2
         anchors.topMargin: Theme.s3
         anchors.bottomMargin: Theme.s3
-        spacing: Theme.s2
+        spacing: Theme.s2 + 2
 
-        Icon {
-            name: root.levelIcon
-            size: 16
-            color: root.accentColor
+        IconChip {
+            icon: root.levelIcon
+            hue: root.accentColor
+            size: 26
+            iconSize: 14
         }
 
         Text {

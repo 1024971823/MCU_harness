@@ -15,10 +15,14 @@ Rectangle {
 
     implicitWidth: 320
     implicitHeight: layout.implicitHeight + cardPadding * 2
-    radius: Theme.radiusLg
+    radius: Theme.radiusLg + 2
     color: fillColor
     border.color: borderColor
     border.width: 1
+
+    Behavior on border.color {
+        ColorAnimation { duration: Theme.animationsEnabled ? Theme.animFast : 0 }
+    }
 
     ColumnLayout {
         id: layout
@@ -30,13 +34,14 @@ Rectangle {
             id: headerBar
             visible: root.title.length > 0 || root.subtitle.length > 0 || headerRow.children.length > 0
             Layout.fillWidth: true
-            spacing: Theme.s2
+            spacing: Theme.s2 + 2
 
-            Icon {
+            IconChip {
                 visible: root.iconName.length > 0
-                name: root.iconName
-                size: 16
-                color: Theme.accent
+                icon: root.iconName
+                hue: Theme.accent
+                size: 28
+                iconSize: 15
             }
 
             ColumnLayout {

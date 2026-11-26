@@ -7,7 +7,7 @@ Rectangle {
 
     implicitWidth: label.implicitWidth + Theme.s2 * 1.5
     implicitHeight: 20
-    radius: Theme.radiusSm
+    radius: Theme.radiusSm + 1
     color: Theme.codeBg
     border.color: Theme.border
     border.width: 1

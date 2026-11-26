@@ -16,6 +16,8 @@ Popup {
     default property alias body: bodyLayout.data
     property alias footer: footerRow.data
 
+    readonly property bool _hasCustomStrip: stripColor !== Qt.rgba(0, 0, 0, 0) && stripColor !== "transparent"
+
     parent: Overlay.overlay
     anchors.centerIn: parent
     width: Math.min(dialogWidth, parent ? parent.width - Theme.s8 : dialogWidth)
@@ -29,27 +31,45 @@ Popup {
     }
 
     enter: Transition {
-        NumberAnimation { property: "opacity"; from: 0.0; to: 1.0; duration: Theme.animNormal; easing.type: Theme.easingType }
-        NumberAnimation { property: "scale"; from: 0.96; to: 1.0; duration: Theme.animNormal; easing.type: Theme.easingType }
+        NumberAnimation {
+            property: "opacity"
+            from: 0.0
+            to: 1.0
+            duration: Theme.animationsEnabled ? Theme.animNormal : 0
+            easing.type: Theme.easingType
+        }
+        NumberAnimation {
+            property: "scale"
+            from: 0.96
+            to: 1.0
+            duration: Theme.animationsEnabled ? Theme.animNormal : 0
+            easing.type: Theme.easingType
+        }
     }
 
     exit: Transition {
-        NumberAnimation { property: "opacity"; from: 1.0; to: 0.0; duration: Theme.animFast; easing.type: Theme.easingType }
+        NumberAnimation {
+            property: "opacity"
+            from: 1.0
+            to: 0.0
+            duration: Theme.animationsEnabled ? Theme.animFast : 0
+            easing.type: Theme.easingType
+        }
     }
 
     Component {
         id: dialogShadowEffect
         MultiEffect {
             shadowEnabled: true
-            shadowBlur: 0.8
-            shadowVerticalOffset: 10
-            shadowColor: "#55000000"
+            shadowBlur: 0.85
+            shadowVerticalOffset: 12
+            shadowColor: "#66000000"
         }
     }
 
     background: Rectangle {
         id: dlgBg
-        radius: Theme.radiusXl
+        radius: Theme.radius2xl
         color: Theme.bgSurface
         border.color: Theme.effectsEnabled ? Theme.border : Theme.borderStrong
         border.width: 1
@@ -61,14 +81,30 @@ Popup {
     contentItem: ColumnLayout {
         spacing: 0
 
-        // Optional top risk accent strip
-        Rectangle {
-            visible: root.stripColor !== Qt.rgba(0, 0, 0, 0) && root.stripColor !== "transparent"
+        // 2px brand-gradient top hairline (or 4px custom stripColor when set)
+        Item {
             Layout.fillWidth: true
-            Layout.preferredHeight: 4
-            color: root.stripColor
-            topLeftRadius: Theme.radiusXl
-            topRightRadius: Theme.radiusXl
+            Layout.preferredHeight: root._hasCustomStrip ? 4 : 2
+
+            Gradient {
+                id: topHairlineGrad
+                orientation: Gradient.Horizontal
+                GradientStop { position: 0.0; color: Theme.brandA }
+                GradientStop { position: 0.5; color: Theme.brandB }
+                GradientStop { position: 1.0; color: Theme.brandC }
+            }
+
+            Rectangle {
+                anchors.top: parent.top
+                anchors.bottom: parent.bottom
+                anchors.left: parent.left
+                anchors.right: parent.right
+                anchors.leftMargin: Theme.radius2xl
+                anchors.rightMargin: Theme.radius2xl
+                radius: height / 2
+                color: root._hasCustomStrip ? root.stripColor : "transparent"
+                gradient: root._hasCustomStrip ? null : topHairlineGrad
+            }
         }
 
         // Header
@@ -80,19 +116,13 @@ Popup {
             Layout.bottomMargin: Theme.s3
             spacing: Theme.s3
 
-            Rectangle {
+            IconChip {
                 visible: root.iconName.length > 0
-                Layout.preferredWidth: 32
-                Layout.preferredHeight: 32
-                radius: Theme.radiusMd
-                color: Qt.rgba(root.iconColor.r, root.iconColor.g, root.iconColor.b, 0.14)
-
-                Icon {
-                    anchors.centerIn: parent
-                    name: root.iconName
-                    size: 18
-                    color: root.iconColor
-                }
+                icon: root.iconName
+                hue: root.iconColor
+                size: 34
+                iconSize: 18
+                chipRadius: Theme.radiusMd + 2
             }
 
             ColumnLayout {

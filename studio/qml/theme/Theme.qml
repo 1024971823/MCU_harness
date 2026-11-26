@@ -13,55 +13,77 @@ Item {
     readonly property bool systemIsDark: Application.styleHints.colorScheme === Qt.Dark
     readonly property bool isDark: mode === "dark" || (mode === "system" && systemIsDark)
 
-    // Rendering capabilities (Software or offscreen renderer falls back to crisp 1px borderStrong)
+    // Rendering capabilities (Software or offscreen renderer falls back to crisp borders without shader layers)
     readonly property bool effectsEnabled: GraphicsInfo.api !== GraphicsInfo.Software && Qt.platform.pluginName !== "offscreen"
+    readonly property bool animationsEnabled: !AppInfo.screenshotMode
 
-    // Surface & background tokens
-    readonly property color bgCanvas: isDark ? "#0B0E14" : "#F6F8FB"
-    readonly property color bgSidebar: isDark ? "#0F131A" : "#EEF1F6"
-    readonly property color bgSurface: isDark ? "#141922" : "#FFFFFF"
-    readonly property color bgPanel: isDark ? "#141922" : "#FFFFFF"
-    readonly property color bgElevated: isDark ? "#1B222E" : "#F3F5F9"
-    readonly property color bgHover: isDark ? "#232B38" : "#E6EAF2"
-    readonly property color bgActive: isDark ? "#2A3444" : "#DCE2ED"
-    readonly property color codeBg: isDark ? "#090C11" : "#F1F4F8"
-    readonly property color scrim: isDark ? "#9905070B" : "#660F172A"
+    function alpha(c, a) {
+        return Qt.rgba(c.r, c.g, c.b, a)
+    }
+
+    // Surface & background tokens (Aurora)
+    readonly property color bgCanvas: isDark ? "#09090F" : "#F7F7FB"
+    readonly property color bgSidebar: isDark ? "#0C0C14" : "#F0F0F7"
+    readonly property color bgSurface: isDark ? "#111119" : "#FFFFFF"
+    readonly property color bgPanel: isDark ? "#13131C" : "#FFFFFF"
+    readonly property color bgElevated: isDark ? "#1A1A25" : "#F4F4FA"
+    readonly property color bgHover: isDark ? "#20202D" : "#ECECF5"
+    readonly property color bgActive: isDark ? "#2A2A3A" : "#E2E2EF"
+    readonly property color codeBg: isDark ? "#0B0B12" : "#F3F3F9"
+    readonly property color scrim: isDark ? "#9E04040A" : "#5C0A0A14"
 
     // Border tokens
-    readonly property color borderSubtle: isDark ? "#212836" : "#E4E8F0"
-    readonly property color border: isDark ? "#2B3445" : "#D4DAE5"
-    readonly property color borderStrong: isDark ? "#3C475C" : "#B4BECE"
+    readonly property color borderSubtle: isDark ? "#1E1E2A" : "#E8E8F0"
+    readonly property color border: isDark ? "#2A2A3A" : "#DCDCE8"
+    readonly property color borderStrong: isDark ? "#3A3A4E" : "#C4C4D4"
 
     // Typography color tokens
-    readonly property color textPrimary: isDark ? "#E6EDF5" : "#111827"
-    readonly property color textSecondary: isDark ? "#A5B0C2" : "#4B5563"
-    readonly property color textMuted: isDark ? "#6E7A8E" : "#6B7280"
+    readonly property color textPrimary: isDark ? "#ECECF4" : "#14141F"
+    readonly property color textSecondary: isDark ? "#A6A6BC" : "#4A4A5E"
+    readonly property color textMuted: isDark ? "#6E6E86" : "#77778C"
     readonly property color textOnAccent: "#FFFFFF"
 
     // Brand & interactive accent tokens
-    readonly property color accent: isDark ? "#4C7DFF" : "#2F63EB"
-    readonly property color accentHover: isDark ? "#638EFF" : "#2554D4"
-    readonly property color accentPressed: isDark ? "#3968EB" : "#1D44B8"
-    readonly property color accentSubtle: isDark ? "#244C7DFF" : "#1A2F63EB"
+    readonly property color accent: isDark ? "#7C6CFF" : "#6D5DF6"
+    readonly property color accentHover: isDark ? "#8F82FF" : "#5B4AE8"
+    readonly property color accentPressed: isDark ? "#6A5AF0" : "#4C3CD6"
+    readonly property color accentSubtle: alpha(accent, isDark ? 0.14 : 0.10)
+
+    readonly property color brandA: isDark ? "#8B5CF6" : "#7C3AED"
+    readonly property color brandB: isDark ? "#6366F1" : "#4F46E5"
+    readonly property color brandC: isDark ? "#22D3EE" : "#0891B2"
+
+    // Identity & category hue tokens
+    readonly property color hueViolet: isDark ? "#A78BFA" : "#7C3AED"
+    readonly property color hueIndigo: isDark ? "#818CF8" : "#4F46E5"
+    readonly property color hueCyan: isDark ? "#22D3EE" : "#0891B2"
+    readonly property color hueSky: isDark ? "#38BDF8" : "#0284C7"
+    readonly property color hueEmerald: isDark ? "#34D399" : "#059669"
+    readonly property color hueAmber: isDark ? "#FBBF24" : "#D97706"
+    readonly property color hueOrange: isDark ? "#FB923C" : "#EA580C"
+    readonly property color hueRose: isDark ? "#FB7185" : "#E11D48"
+    readonly property color huePink: isDark ? "#F472B6" : "#DB2777"
+    readonly property color hueLime: isDark ? "#A3E635" : "#65A30D"
+    readonly property color hueSlate: isDark ? "#94A3B8" : "#475569"
 
     // Semantic status & hardware risk tokens
-    readonly property color success: isDark ? "#34D399" : "#059669"
-    readonly property color successSubtle: isDark ? "#1F34D399" : "#1A059669"
-    readonly property color warning: isDark ? "#F59E0B" : "#D97706"
-    readonly property color warningSubtle: isDark ? "#1FF59E0B" : "#1AD97706"
-    readonly property color danger: isDark ? "#F43F5E" : "#E11D48"
-    readonly property color dangerSubtle: isDark ? "#1FF43F5E" : "#1AE11D48"
-    readonly property color info: isDark ? "#38BDF8" : "#0284C7"
-    readonly property color infoSubtle: isDark ? "#1F38BDF8" : "#1A0284C7"
-    readonly property color purple: isDark ? "#A78BFA" : "#7C3AED"
-    readonly property color purpleSubtle: isDark ? "#1FA78BFA" : "#1A7C3AED"
+    readonly property color success: hueEmerald
+    readonly property color successSubtle: alpha(hueEmerald, isDark ? 0.12 : 0.10)
+    readonly property color warning: hueAmber
+    readonly property color warningSubtle: alpha(hueAmber, isDark ? 0.12 : 0.10)
+    readonly property color danger: hueRose
+    readonly property color dangerSubtle: alpha(hueRose, isDark ? 0.12 : 0.10)
+    readonly property color info: hueSky
+    readonly property color infoSubtle: alpha(hueSky, isDark ? 0.12 : 0.10)
+    readonly property color purple: hueViolet
+    readonly property color purpleSubtle: alpha(hueViolet, isDark ? 0.12 : 0.10)
 
     // Unified diff tokens
-    readonly property color diffAddBg: isDark ? "#1A34D399" : "#18059669"
+    readonly property color diffAddBg: alpha(hueEmerald, isDark ? 0.11 : 0.09)
     readonly property color diffAddText: isDark ? "#6EE7B7" : "#065F46"
-    readonly property color diffDelBg: isDark ? "#1AF43F5E" : "#18E11D48"
+    readonly property color diffDelBg: alpha(hueRose, isDark ? 0.11 : 0.09)
     readonly property color diffDelText: isDark ? "#FDA4AF" : "#9F1239"
-    readonly property color diffHunkBg: isDark ? "#1A38BDF8" : "#180284C7"
+    readonly property color diffHunkBg: alpha(hueSky, isDark ? 0.11 : 0.09)
     readonly property color diffHunkText: isDark ? "#7DD3FC" : "#075985"
 
     // 4px spacing grid
@@ -83,6 +105,8 @@ Item {
     readonly property int radiusMd: 6
     readonly property int radiusLg: 10
     readonly property int radiusXl: 14
+    readonly property int composerRadius: 18
+    readonly property int radius2xl: 20
     readonly property int radiusPill: 999
 
     // Typography
@@ -97,6 +121,9 @@ Item {
     readonly property int textXl: 20
     readonly property int text2xl: 28
 
+    readonly property int chatTextSize: 14
+    readonly property real chatLineHeight: 1.6
+
     readonly property int weightNormal: Font.Normal
     readonly property int weightMedium: Font.Medium
     readonly property int weightSemiBold: Font.DemiBold
@@ -104,12 +131,18 @@ Item {
 
     // Motion timings (ms)
     readonly property int animFast: 120
-    readonly property int animNormal: 180
-    readonly property int animSlow: 260
+    readonly property int animNormal: 200
+    readonly property int animSlow: 320
     readonly property int easingType: Easing.OutCubic
 
     // Layout dimensions
     readonly property int activityBarWidth: 48
-    readonly property int statusBarHeight: 26
+    readonly property int navRailWidth: 60
+    readonly property int topBarHeight: 48
+    readonly property int statusBarHeight: 24
+    readonly property int pluginBarWidth: 48
+    readonly property int threadsPanelWidth: 272
+    readonly property int pluginPanelDefaultWidth: 400
+    readonly property int chatMaxWidth: 800
     readonly property int focusRingWidth: 2
 }

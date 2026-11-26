@@ -7,7 +7,7 @@ ToolTip {
     id: root
     property string shortcut: ""
 
-    delay: 450
+    delay: 420
     timeout: 4500
     padding: Theme.s2
 
@@ -32,6 +32,6 @@ ToolTip {
         color: Theme.bgElevated
         border.color: Theme.borderStrong
         border.width: 1
-        radius: Theme.radiusMd
+        radius: Theme.radiusMd + 1
     }
 }

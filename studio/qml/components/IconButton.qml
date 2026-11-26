@@ -19,7 +19,7 @@ Button {
     hoverEnabled: true
 
     background: Rectangle {
-        radius: Theme.radiusMd
+        radius: Theme.radiusMd + 1
         color: {
             if (!root.enabled) return "transparent"
             if (root.down) return Theme.bgActive
@@ -27,13 +27,17 @@ Button {
             if (root.hovered) return Theme.bgHover
             return "transparent"
         }
+        border.color: root.active ? Theme.alpha(Theme.accent, 0.28) : "transparent"
+        border.width: root.active ? 1 : 0
 
-        Behavior on color { ColorAnimation { duration: Theme.animFast } }
+        Behavior on color {
+            ColorAnimation { duration: Theme.animationsEnabled ? Theme.animFast : 0 }
+        }
 
         Rectangle {
             anchors.fill: parent
             anchors.margins: -2
-            radius: Theme.radiusMd + 2
+            radius: Theme.radiusMd + 3
             color: "transparent"
             border.color: Theme.accent
             border.width: Theme.focusRingWidth

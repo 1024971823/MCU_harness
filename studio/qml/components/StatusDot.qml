@@ -40,6 +40,8 @@ Item {
         height: root.size
         radius: width / 2
         color: root.color
-        Behavior on color { ColorAnimation { duration: Theme.animFast } }
+        Behavior on color {
+            ColorAnimation { duration: Theme.animationsEnabled ? Theme.animFast : 0 }
+        }
     }
 }

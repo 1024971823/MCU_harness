@@ -31,10 +31,13 @@ ProgressBar {
             width: Math.max(root.visualPosition > 0 ? height : 0, root.visualPosition * parent.width)
 
             Behavior on width {
-                NumberAnimation { duration: Theme.animNormal; easing.type: Theme.easingType }
+                NumberAnimation {
+                    duration: Theme.animationsEnabled ? Theme.animNormal : 0
+                    easing.type: Theme.easingType
+                }
             }
             Behavior on color {
-                ColorAnimation { duration: Theme.animFast }
+                ColorAnimation { duration: Theme.animationsEnabled ? Theme.animFast : 0 }
             }
         }
 

@@ -21,21 +21,13 @@ Item {
         width: Math.min(parent.width - Theme.s6 * 2, 420)
         spacing: Theme.s3
 
-        Rectangle {
+        IconChip {
             Layout.alignment: Qt.AlignHCenter
-            Layout.preferredWidth: 48
-            Layout.preferredHeight: 48
-            radius: 24
-            color: Theme.bgElevated
-            border.color: Theme.border
-            border.width: 1
-
-            Icon {
-                anchors.centerIn: parent
-                name: root.iconName
-                size: 22
-                color: Theme.textSecondary
-            }
+            size: 48
+            iconSize: 22
+            chipRadius: 24
+            icon: root.iconName
+            hue: Theme.accent
         }
 
         Text {

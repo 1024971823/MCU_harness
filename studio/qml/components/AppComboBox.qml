@@ -11,10 +11,20 @@ ComboBox {
     focusPolicy: Qt.StrongFocus
     hoverEnabled: true
 
+    Component {
+        id: popupShadowEffect
+        MultiEffect {
+            shadowEnabled: true
+            shadowBlur: 0.65
+            shadowVerticalOffset: 6
+            shadowColor: "#48000000"
+        }
+    }
+
     delegate: ItemDelegate {
         id: itemDel
         width: ListView.view ? ListView.view.width : root.width
-        height: 30
+        height: 32
         highlighted: root.highlightedIndex === index
 
         required property var modelData
@@ -24,20 +34,22 @@ ComboBox {
             text: root.textRole ? (itemDel.modelData[root.textRole] ?? String(itemDel.modelData)) : String(itemDel.modelData)
             font.family: Theme.fontSans
             font.pixelSize: Theme.textBase
-            font.weight: root.currentIndex === itemDel.index ? Theme.weightMedium : Theme.weightNormal
+            font.weight: root.currentIndex === itemDel.index ? Theme.weightSemiBold : Theme.weightNormal
             color: root.currentIndex === itemDel.index ? Theme.accent : Theme.textPrimary
             elide: Text.ElideRight
             verticalAlignment: Text.AlignVCenter
         }
 
         background: Rectangle {
-            radius: Theme.radiusSm
-            color: itemDel.highlighted || itemDel.hovered ? Theme.bgHover : "transparent"
+            radius: Theme.radiusMd
+            color: root.currentIndex === itemDel.index
+                ? Theme.accentSubtle
+                : (itemDel.highlighted || itemDel.hovered ? Theme.bgHover : "transparent")
         }
     }
 
     indicator: Icon {
-        x: root.width - width - Theme.s2 - 2
+        x: root.width - width - Theme.s2 - 3
         y: (root.height - height) / 2
         name: Icons.chevronDown
         size: 14
@@ -56,19 +68,21 @@ ComboBox {
     }
 
     background: Rectangle {
-        radius: Theme.radiusMd
+        radius: Theme.radiusMd + 2
         color: root.enabled ? Theme.bgElevated : Theme.bgSidebar
         border.color: root.popup.opened ? Theme.accent : (root.hovered ? Theme.borderStrong : Theme.border)
         border.width: 1
 
-        Behavior on border.color { ColorAnimation { duration: Theme.animFast } }
+        Behavior on border.color {
+            ColorAnimation { duration: Theme.animationsEnabled ? Theme.animFast : 0 }
+        }
 
         Rectangle {
             anchors.fill: parent
             anchors.margins: -3
-            radius: Theme.radiusMd + 2
+            radius: Theme.radiusMd + 4
             color: "transparent"
-            border.color: Theme.accent
+            border.color: Theme.alpha(Theme.accent, 0.45)
             border.width: Theme.focusRingWidth
             visible: root.visualFocus
         }
@@ -96,12 +110,7 @@ ComboBox {
             radius: Theme.radiusLg
 
             layer.enabled: Theme.effectsEnabled
-            layer.effect: MultiEffect {
-                shadowEnabled: true
-                shadowBlur: 0.6
-                shadowVerticalOffset: 6
-                shadowColor: "#40000000"
-            }
+            layer.effect: Theme.effectsEnabled ? popupShadowEffect : null
         }
     }
 }

@@ -67,7 +67,7 @@ Rectangle {
         Rectangle {
             id: header
             Layout.fillWidth: true
-            Layout.preferredHeight: 28
+            Layout.preferredHeight: 30
             color: Theme.bgElevated
             topLeftRadius: Theme.radiusLg
             topRightRadius: Theme.radiusLg
@@ -89,6 +89,7 @@ Rectangle {
                     text: qsTr("Unified Diff")
                     font.family: Theme.fontMono
                     font.pixelSize: Theme.textXs
+                    font.weight: Theme.weightMedium
                     color: Theme.textSecondary
                 }
 

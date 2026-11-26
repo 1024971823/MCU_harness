@@ -14,13 +14,14 @@ RowLayout {
 
     RowLayout {
         Layout.fillWidth: true
-        spacing: Theme.s2
+        spacing: Theme.s2 + 2
 
-        Icon {
+        IconChip {
             visible: root.iconName.length > 0
-            name: root.iconName
-            size: 18
-            color: Theme.accent
+            icon: root.iconName
+            hue: Theme.accent
+            size: 28
+            iconSize: 15
         }
 
         ColumnLayout {

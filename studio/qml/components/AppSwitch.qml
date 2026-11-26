@@ -19,10 +19,12 @@ Switch {
             if (root.checked) return root.hovered ? Theme.accentHover : Theme.accent
             return root.hovered ? Theme.bgActive : Theme.bgElevated
         }
-        border.color: root.checked ? "transparent" : Theme.borderStrong
-        border.width: root.checked ? 0 : 1
+        border.color: root.checked ? Theme.alpha("#FFFFFF", 0.14) : Theme.borderStrong
+        border.width: 1
 
-        Behavior on color { ColorAnimation { duration: Theme.animFast } }
+        Behavior on color {
+            ColorAnimation { duration: Theme.animationsEnabled ? Theme.animFast : 0 }
+        }
 
         Rectangle {
             anchors.fill: parent
@@ -43,7 +45,10 @@ Switch {
             color: root.checked ? Theme.textOnAccent : Theme.textSecondary
 
             Behavior on x {
-                NumberAnimation { duration: Theme.animFast; easing.type: Theme.easingType }
+                NumberAnimation {
+                    duration: Theme.animationsEnabled ? Theme.animFast : 0
+                    easing.type: Theme.easingType
+                }
             }
         }
     }

@@ -108,6 +108,12 @@ REQUESTED_ICONS=(
     sun moon monitor bell external-link upload file-down clipboard-copy user lock unlock
     hard-drive waypoints timer binary variable list-checks circle-dot loader-circle
     ellipsis keyboard pin
+    brain brain-circuit lightbulb puzzle blocks layout-grid panel-right-open
+    panel-right-close panel-left-open panel-left-close maximize-2 minimize-2
+    square-pen at-sign paperclip arrow-down thumbs-up thumbs-down rotate-cw
+    chevrons-up-down store radar cable git-branch clock star sliders-horizontal
+    message-circle orbit atom workflow audio-waveform sparkle corner-down-left
+    hash box package
 )
 
 need_lucide=0
