@@ -33,12 +33,18 @@ public:
         LevelRole,
         TimestampRole,
         DurationMsRole,
+        StartedMsRole,
+        ExpandedRole,
+        GroupStartRole,
+        GroupEndRole,
     };
 
     struct Entry {
-        QString kind; // "user" | "assistant" | "tool_call" | "notice"
+        QString kind; // "user" | "thinking" | "assistant" | "tool_call" | "tool_result" | "notice"
         QString text;
         bool streaming = false;
+        bool expanded = false;
+        bool userToggled = false;
         QString toolCallId;
         QString toolName;
         QString toolTitle;
@@ -64,7 +70,17 @@ public:
     QHash<int, QByteArray> roleNames() const override;
 
     Q_INVOKABLE void clear();
+    Q_INVOKABLE void setExpanded(int row, bool expanded);
+    Q_INVOKABLE QString plainTextAt(int row) const;
     void appendUserMessage(const QString &text, const QString &timestamp = QString());
+    void appendReasoningDelta(const QString &delta);
+    void finishReasoning();
+    void addThinkingEntry(const QString &text,
+                          bool streaming = false,
+                          qint64 durationMs = 0,
+                          bool expanded = false,
+                          qint64 startedMs = 0,
+                          const QString &timestamp = QString());
     void startAssistantMessage(const QString &timestamp = QString());
     void appendAssistantDelta(const QString &delta);
     void finishAssistantMessage(const QString &finalText = QString());
@@ -81,6 +97,7 @@ public:
                           const QString &error);
     void addNotice(const QString &level, const QString &text);
     void loadFromSessionMessages(const QJsonArray &messages);
+    void refreshLocalization();
 
     static QString toolTitle(const QString &toolName);
     static QString toolIcon(const QString &toolName);
@@ -90,6 +107,8 @@ signals:
     void countChanged();
 
 private:
+    void insertEntry(Entry &&entry);
+    static bool isAssistantTurnKind(const QString &kind);
     int findToolCallRow(const QString &id) const;
     static QString currentTimeString();
     static QString summarizeResult(const QJsonObject &result, bool ok, bool denied, bool hardDenied, const QString &error);

@@ -11,6 +11,9 @@
 #include "core/Logger.h"
 #include "core/UpdateManager.h"
 #include "core/Utils.h"
+#include "models/ConversationModel.h"
+#include "models/PlaybookModel.h"
+#include "models/SessionModel.h"
 
 #include <QCommandLineOption>
 #include <QCommandLineParser>
@@ -146,13 +149,18 @@ void runScreenshotMatrix(QQmlApplicationEngine &engine,
     const QStringList states = {
         QStringLiteral("agent-empty"),
         QStringLiteral("agent-conversation"),
+        QStringLiteral("agent-streaming"),
+        QStringLiteral("plugin-probe"),
+        QStringLiteral("plugin-watch"),
+        QStringLiteral("plugin-rtos"),
+        QStringLiteral("plugin-console"),
+        QStringLiteral("plugin-audit"),
+        QStringLiteral("plugin-maximized"),
+        QStringLiteral("skills"),
+        QStringLiteral("plugins"),
+        QStringLiteral("history"),
         QStringLiteral("approval-danger"),
         QStringLiteral("approval-diff"),
-        QStringLiteral("hardware"),
-        QStringLiteral("watch"),
-        QStringLiteral("rtos"),
-        QStringLiteral("sessions"),
-        QStringLiteral("audit"),
         QStringLiteral("settings-model"),
         QStringLiteral("settings-appearance"),
         QStringLiteral("license"),
@@ -344,9 +352,12 @@ int Application::run(int argc, char *argv[]) {
 
     QTranslator translator;
     applyTranslator(app, engine, translator, settings.language());
-    QObject::connect(&settings, &AppSettings::languageChanged, &app, [&app, &engine, &translator, &settings, &updateManager]() {
+    QObject::connect(&settings, &AppSettings::languageChanged, &app, [&app, &engine, &translator, &settings, &updateManager, &workbench]() {
         updateManager.setLanguageHint(settings.language());
         applyTranslator(app, engine, translator, settings.language());
+        workbench.sessions()->refreshLocalization();
+        workbench.playbooks()->refreshLocalization();
+        workbench.conversation()->refreshLocalization();
     });
 
     const QUrl mainQmlUrl = QFile::exists(QStringLiteral(":/qt/qml/McuStudio/qml/Main.qml"))

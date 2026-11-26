@@ -15,6 +15,17 @@ QString defaultLanguageForLocale() {
                : QStringLiteral("en");
 }
 
+QStringList defaultEnabledPlugins() {
+    return {
+        QStringLiteral("probe"),
+        QStringLiteral("watch"),
+        QStringLiteral("rtos"),
+        QStringLiteral("console"),
+        QStringLiteral("audit"),
+        QStringLiteral("engine"),
+    };
+}
+
 } // namespace
 
 AppSettings::AppSettings(bool ephemeral, QObject *parent)
@@ -60,6 +71,13 @@ void AppSettings::loadFromStorage() {
     m_crashUploadConsent = m_settings.value(QStringLiteral("diagnostics/crashUploadConsent"), false).toBool();
     m_rememberKey = m_settings.value(QStringLiteral("agent/rememberKey"), true).toBool();
     m_autoRefresh = m_settings.value(QStringLiteral("engine/autoRefresh"), true).toBool();
+
+    m_enabledPlugins = m_settings.value(QStringLiteral("ui/enabledPlugins"), defaultEnabledPlugins()).toStringList();
+    m_activePlugin = m_settings.value(QStringLiteral("ui/activePlugin"), QString()).toString();
+    m_pluginPanelVisible = m_settings.value(QStringLiteral("ui/pluginPanelVisible"), false).toBool();
+    m_pluginPanelWidth = qBound(320, m_settings.value(QStringLiteral("ui/pluginPanelWidth"), 400).toInt(), 720);
+    m_threadsPanelVisible = m_settings.value(QStringLiteral("ui/threadsPanelVisible"), true).toBool();
+    m_showThinking = m_settings.value(QStringLiteral("ui/showThinking"), true).toBool();
 }
 
 void AppSettings::saveKey(const QString &key, const QVariant &value) {
@@ -350,6 +368,72 @@ void AppSettings::setWatchExpressions(const QStringList &value) {
     }
 }
 
+void AppSettings::setEnabledPlugins(const QStringList &value) {
+    if (m_enabledPlugins != value) {
+        m_enabledPlugins = value;
+        saveKey(QStringLiteral("ui/enabledPlugins"), value);
+        emit enabledPluginsChanged();
+    }
+}
+
+void AppSettings::setPluginEnabled(const QString &id, bool on) {
+    const QString cleaned = id.trimmed();
+    if (cleaned.isEmpty()) {
+        return;
+    }
+    QStringList next = m_enabledPlugins;
+    if (on) {
+        if (!next.contains(cleaned)) {
+            next.append(cleaned);
+        }
+    } else {
+        next.removeAll(cleaned);
+    }
+    setEnabledPlugins(next);
+}
+
+void AppSettings::setActivePlugin(const QString &value) {
+    const QString cleaned = value.trimmed();
+    if (m_activePlugin != cleaned) {
+        m_activePlugin = cleaned;
+        saveKey(QStringLiteral("ui/activePlugin"), cleaned);
+        emit activePluginChanged();
+    }
+}
+
+void AppSettings::setPluginPanelVisible(bool value) {
+    if (m_pluginPanelVisible != value) {
+        m_pluginPanelVisible = value;
+        saveKey(QStringLiteral("ui/pluginPanelVisible"), value);
+        emit pluginPanelVisibleChanged();
+    }
+}
+
+void AppSettings::setPluginPanelWidth(int value) {
+    const int clamped = qBound(320, value, 720);
+    if (m_pluginPanelWidth != clamped) {
+        m_pluginPanelWidth = clamped;
+        saveKey(QStringLiteral("ui/pluginPanelWidth"), clamped);
+        emit pluginPanelWidthChanged();
+    }
+}
+
+void AppSettings::setThreadsPanelVisible(bool value) {
+    if (m_threadsPanelVisible != value) {
+        m_threadsPanelVisible = value;
+        saveKey(QStringLiteral("ui/threadsPanelVisible"), value);
+        emit threadsPanelVisibleChanged();
+    }
+}
+
+void AppSettings::setShowThinking(bool value) {
+    if (m_showThinking != value) {
+        m_showThinking = value;
+        saveKey(QStringLiteral("ui/showThinking"), value);
+        emit showThinkingChanged();
+    }
+}
+
 void AppSettings::addRecentProject(const QString &path) {
     const QString cleaned = QDir::cleanPath(path.trimmed());
     if (cleaned.isEmpty()) {
@@ -408,6 +492,12 @@ void AppSettings::resetToDefaults() {
     emit autoRefreshChanged();
     emit recentProjectsChanged();
     emit watchExpressionsChanged();
+    emit enabledPluginsChanged();
+    emit activePluginChanged();
+    emit pluginPanelVisibleChanged();
+    emit pluginPanelWidthChanged();
+    emit threadsPanelVisibleChanged();
+    emit showThinkingChanged();
 }
 
 void AppSettings::sync() {

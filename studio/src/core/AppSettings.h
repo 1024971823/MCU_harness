@@ -43,6 +43,12 @@ class AppSettings : public QObject {
     Q_PROPERTY(bool connectionTestOk READ connectionTestOk NOTIFY connectionTestChanged)
     Q_PROPERTY(QStringList recentProjects READ recentProjects NOTIFY recentProjectsChanged)
     Q_PROPERTY(QStringList watchExpressions READ watchExpressions WRITE setWatchExpressions NOTIFY watchExpressionsChanged)
+    Q_PROPERTY(QStringList enabledPlugins READ enabledPlugins WRITE setEnabledPlugins NOTIFY enabledPluginsChanged)
+    Q_PROPERTY(QString activePlugin READ activePlugin WRITE setActivePlugin NOTIFY activePluginChanged)
+    Q_PROPERTY(bool pluginPanelVisible READ pluginPanelVisible WRITE setPluginPanelVisible NOTIFY pluginPanelVisibleChanged)
+    Q_PROPERTY(int pluginPanelWidth READ pluginPanelWidth WRITE setPluginPanelWidth NOTIFY pluginPanelWidthChanged)
+    Q_PROPERTY(bool threadsPanelVisible READ threadsPanelVisible WRITE setThreadsPanelVisible NOTIFY threadsPanelVisibleChanged)
+    Q_PROPERTY(bool showThinking READ showThinking WRITE setShowThinking NOTIFY showThinkingChanged)
 
 public:
     explicit AppSettings(bool ephemeral = false, QObject *parent = nullptr);
@@ -143,6 +149,25 @@ public:
     QStringList watchExpressions() const { return m_watchExpressions; }
     void setWatchExpressions(const QStringList &value);
 
+    QStringList enabledPlugins() const { return m_enabledPlugins; }
+    Q_INVOKABLE void setEnabledPlugins(const QStringList &value);
+    Q_INVOKABLE void setPluginEnabled(const QString &id, bool on);
+
+    QString activePlugin() const { return m_activePlugin; }
+    Q_INVOKABLE void setActivePlugin(const QString &value);
+
+    bool pluginPanelVisible() const { return m_pluginPanelVisible; }
+    Q_INVOKABLE void setPluginPanelVisible(bool value);
+
+    int pluginPanelWidth() const { return m_pluginPanelWidth; }
+    Q_INVOKABLE void setPluginPanelWidth(int value);
+
+    bool threadsPanelVisible() const { return m_threadsPanelVisible; }
+    Q_INVOKABLE void setThreadsPanelVisible(bool value);
+
+    bool showThinking() const { return m_showThinking; }
+    Q_INVOKABLE void setShowThinking(bool value);
+
     Q_INVOKABLE void addRecentProject(const QString &path);
     Q_INVOKABLE void clearRecentProjects();
     Q_INVOKABLE void resetToDefaults();
@@ -182,6 +207,12 @@ signals:
     void connectionTestChanged();
     void recentProjectsChanged();
     void watchExpressionsChanged();
+    void enabledPluginsChanged();
+    void activePluginChanged();
+    void pluginPanelVisibleChanged();
+    void pluginPanelWidthChanged();
+    void threadsPanelVisibleChanged();
+    void showThinkingChanged();
 
 private:
     void loadFromStorage();
@@ -223,4 +254,10 @@ private:
     bool m_connectionTestOk = false;
     QStringList m_recentProjects;
     QStringList m_watchExpressions;
+    QStringList m_enabledPlugins;
+    QString m_activePlugin;
+    bool m_pluginPanelVisible = false;
+    int m_pluginPanelWidth = 400;
+    bool m_threadsPanelVisible = true;
+    bool m_showThinking = true;
 };

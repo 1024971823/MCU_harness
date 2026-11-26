@@ -21,6 +21,7 @@ public:
         ErrorRole,
         ChangedRole,
         ChangeSerialRole,
+        HistoryRole,
     };
 
     struct Entry {
@@ -33,6 +34,7 @@ public:
         QString error;
         bool changed = false;
         int changeSerial = 0;
+        QVariantList history;
     };
 
     explicit WatchModel(QObject *parent = nullptr);

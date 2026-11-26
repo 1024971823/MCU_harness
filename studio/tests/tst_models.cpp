@@ -2,7 +2,9 @@
 #include "models/LogModel.h"
 #include "models/WatchModel.h"
 
+#include <QJsonArray>
 #include <QJsonObject>
+#include <QSignalSpy>
 #include <QTest>
 
 class TestModels : public QObject {
@@ -11,6 +13,9 @@ class TestModels : public QObject {
 private slots:
     void testAll27ToolTitles();
     void testConversationUpsertById();
+    void testThinkingLifecycleAndExpandedToggle();
+    void testGroupStartAndGroupEndRoles();
+    void testLoadFromSessionMessagesWithReasoning();
     void testLogModelRingAndFilter();
     void testWatchModelChangeSerial();
 };
@@ -78,6 +83,130 @@ void TestModels::testConversationUpsertById() {
     QCOMPARE(model.data(model.index(2), ConversationModel::OkRole).toBool(), true);
     QCOMPARE(model.data(model.index(2), ConversationModel::SummaryRole).toString(), QStringLiteral("HardFault at main.c:42"));
     QVERIFY(!model.data(model.index(2), ConversationModel::ArgsPrettyRole).toString().isEmpty());
+}
+
+void TestModels::testThinkingLifecycleAndExpandedToggle() {
+    ConversationModel model;
+    model.appendUserMessage(QStringLiteral("Diagnose crash"));
+
+    model.appendReasoningDelta(QStringLiteral("Checking SCB->CFSR "));
+    QCOMPARE(model.rowCount(), 2);
+    QCOMPARE(model.data(model.index(1), ConversationModel::KindRole).toString(), QStringLiteral("thinking"));
+    QCOMPARE(model.data(model.index(1), ConversationModel::StreamingRole).toBool(), true);
+    QCOMPARE(model.data(model.index(1), ConversationModel::ExpandedRole).toBool(), true);
+    QVERIFY(model.data(model.index(1), ConversationModel::StartedMsRole).toLongLong() > 0);
+
+    model.appendReasoningDelta(QStringLiteral("and HFSR."));
+    QCOMPARE(model.rowCount(), 2);
+    QCOMPARE(model.data(model.index(1), ConversationModel::TextRole).toString(),
+             QStringLiteral("Checking SCB->CFSR and HFSR."));
+
+    // appendAssistantDelta closes streaming thinking entry and auto-collapses it
+    model.appendAssistantDelta(QStringLiteral("Root cause:"));
+    QCOMPARE(model.rowCount(), 3);
+    QCOMPARE(model.data(model.index(1), ConversationModel::StreamingRole).toBool(), false);
+    QCOMPARE(model.data(model.index(1), ConversationModel::ExpandedRole).toBool(), false);
+    QVERIFY(model.data(model.index(1), ConversationModel::DurationMsRole).toLongLong() >= 0);
+    QCOMPARE(model.data(model.index(2), ConversationModel::KindRole).toString(), QStringLiteral("assistant"));
+    QCOMPARE(model.plainTextAt(1), QStringLiteral("Checking SCB->CFSR and HFSR."));
+
+    // Explicit user toggle survives finishReasoning()
+    model.finishAssistantMessage();
+    model.appendReasoningDelta(QStringLiteral("Second pass analysis..."));
+    QCOMPARE(model.rowCount(), 4);
+    model.setExpanded(3, true);
+    model.finishReasoning();
+    QCOMPARE(model.data(model.index(3), ConversationModel::StreamingRole).toBool(), false);
+    QCOMPARE(model.data(model.index(3), ConversationModel::ExpandedRole).toBool(), true);
+}
+
+void TestModels::testGroupStartAndGroupEndRoles() {
+    ConversationModel model;
+    QSignalSpy dataChangedSpy(&model, &QAbstractItemModel::dataChanged);
+
+    model.appendUserMessage(QStringLiteral("Hello"));
+    QCOMPARE(model.data(model.index(0), ConversationModel::GroupStartRole).toBool(), false);
+    QCOMPARE(model.data(model.index(0), ConversationModel::GroupEndRole).toBool(), false);
+
+    model.appendReasoningDelta(QStringLiteral("Thinking..."));
+    QCOMPARE(model.data(model.index(1), ConversationModel::GroupStartRole).toBool(), true);
+    QCOMPARE(model.data(model.index(1), ConversationModel::GroupEndRole).toBool(), true);
+
+    dataChangedSpy.clear();
+    model.addToolCall(QStringLiteral("tc-1"), QStringLiteral("diagnose_crash"), QJsonObject{{QStringLiteral("elf"), QStringLiteral("app.elf")}});
+    // Previous row (row 1) must have emitted dataChanged with GroupEndRole
+    bool sawGroupEndChange = false;
+    for (const QList<QVariant> &args : dataChangedSpy) {
+        if (args.at(0).toModelIndex().row() == 1) {
+            const QList<int> roles = args.at(2).value<QList<int>>();
+            if (roles.contains(ConversationModel::GroupEndRole)) {
+                sawGroupEndChange = true;
+            }
+        }
+    }
+    QVERIFY(sawGroupEndChange);
+    QCOMPARE(model.data(model.index(1), ConversationModel::GroupStartRole).toBool(), true);
+    QCOMPARE(model.data(model.index(1), ConversationModel::GroupEndRole).toBool(), false);
+    QCOMPARE(model.data(model.index(2), ConversationModel::GroupStartRole).toBool(), false);
+    QCOMPARE(model.data(model.index(2), ConversationModel::GroupEndRole).toBool(), true);
+
+    model.upsertToolResult(QStringLiteral("tc-1"), QStringLiteral("diagnose_crash"), true, false, false,
+                           QJsonObject{{QStringLiteral("summary"), QStringLiteral("No fault")}}, QString());
+    QCOMPARE(model.data(model.index(2), ConversationModel::KindRole).toString(), QStringLiteral("tool_result"));
+    QCOMPARE(model.data(model.index(2), ConversationModel::GroupStartRole).toBool(), false);
+    QCOMPARE(model.data(model.index(2), ConversationModel::GroupEndRole).toBool(), true);
+    QVERIFY(model.plainTextAt(2).contains(QStringLiteral("No fault")));
+
+    model.appendAssistantDelta(QStringLiteral("All clear."));
+    model.finishAssistantMessage();
+    QCOMPARE(model.data(model.index(2), ConversationModel::GroupEndRole).toBool(), false);
+    QCOMPARE(model.data(model.index(3), ConversationModel::GroupStartRole).toBool(), false);
+    QCOMPARE(model.data(model.index(3), ConversationModel::GroupEndRole).toBool(), true);
+
+    model.addNotice(QStringLiteral("info"), QStringLiteral("Done"));
+    QCOMPARE(model.data(model.index(3), ConversationModel::GroupEndRole).toBool(), true);
+    QCOMPARE(model.data(model.index(4), ConversationModel::GroupStartRole).toBool(), false);
+    QCOMPARE(model.data(model.index(4), ConversationModel::GroupEndRole).toBool(), false);
+}
+
+void TestModels::testLoadFromSessionMessagesWithReasoning() {
+    ConversationModel model;
+    QJsonArray msgs;
+    msgs.append(QJsonObject{
+        {QStringLiteral("role"), QStringLiteral("user")},
+        {QStringLiteral("content"), QStringLiteral("Inspect USART3")},
+    });
+    msgs.append(QJsonObject{
+        {QStringLiteral("role"), QStringLiteral("assistant")},
+        {QStringLiteral("reasoning"), QStringLiteral("Need to inspect USART3 registers first.")},
+        {QStringLiteral("content"), QStringLiteral("Checking USART3 now.")},
+        {QStringLiteral("tool_calls"), QJsonArray{
+            QJsonObject{
+                {QStringLiteral("id"), QStringLiteral("tc-9")},
+                {QStringLiteral("name"), QStringLiteral("inspect_peripheral")},
+                {QStringLiteral("arguments"), QJsonObject{{QStringLiteral("peripheral"), QStringLiteral("USART3")}}},
+            }
+        }},
+    });
+    msgs.append(QJsonObject{
+        {QStringLiteral("role"), QStringLiteral("tool")},
+        {QStringLiteral("tool_call_id"), QStringLiteral("tc-9")},
+        {QStringLiteral("name"), QStringLiteral("inspect_peripheral")},
+        {QStringLiteral("content"), QStringLiteral("{\"summary\":\"USART3 OK\"}")},
+    });
+
+    model.loadFromSessionMessages(msgs);
+    QCOMPARE(model.rowCount(), 4);
+    QCOMPARE(model.data(model.index(0), ConversationModel::KindRole).toString(), QStringLiteral("user"));
+    QCOMPARE(model.data(model.index(1), ConversationModel::KindRole).toString(), QStringLiteral("thinking"));
+    QCOMPARE(model.data(model.index(1), ConversationModel::TextRole).toString(), QStringLiteral("Need to inspect USART3 registers first."));
+    QCOMPARE(model.data(model.index(1), ConversationModel::StreamingRole).toBool(), false);
+    QCOMPARE(model.data(model.index(1), ConversationModel::ExpandedRole).toBool(), false);
+    QCOMPARE(model.data(model.index(1), ConversationModel::GroupStartRole).toBool(), true);
+    QCOMPARE(model.data(model.index(1), ConversationModel::GroupEndRole).toBool(), false);
+    QCOMPARE(model.data(model.index(2), ConversationModel::KindRole).toString(), QStringLiteral("assistant"));
+    QCOMPARE(model.data(model.index(3), ConversationModel::KindRole).toString(), QStringLiteral("tool_call"));
+    QCOMPARE(model.data(model.index(3), ConversationModel::GroupEndRole).toBool(), true);
 }
 
 void TestModels::testLogModelRingAndFilter() {

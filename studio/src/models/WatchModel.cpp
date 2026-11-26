@@ -3,6 +3,7 @@
 #include <QHash>
 #include <QJsonDocument>
 #include <QJsonValue>
+#include <cmath>
 
 namespace {
 
@@ -53,6 +54,7 @@ QVariant WatchModel::data(const QModelIndex &index, int role) const {
     case ErrorRole:        return e.error;
     case ChangedRole:      return e.changed;
     case ChangeSerialRole: return e.changeSerial;
+    case HistoryRole:      return e.history;
     default:               return {};
     }
 }
@@ -68,6 +70,7 @@ QHash<int, QByteArray> WatchModel::roleNames() const {
         {ErrorRole,        "error"},
         {ChangedRole,      "changed"},
         {ChangeSerialRole, "changeSerial"},
+        {HistoryRole,      "history"},
     };
 }
 
@@ -128,10 +131,25 @@ void WatchModel::updateFromSnapshot(const QJsonObject &watchObj, const QStringLi
         auto prevIt = prevByExpr.constFind(expr);
         if (prevIt != prevByExpr.constEnd()) {
             e.changeSerial = prevIt.value().changeSerial;
+            e.history = prevIt.value().history;
             const bool valueChanged = (prevIt.value().display != e.display) || (prevIt.value().hex != e.hex);
             if (valueChanged) {
                 e.changed = true;
                 ++e.changeSerial;
+            }
+        }
+        if (e.error.isEmpty()) {
+            bool numOk = false;
+            double numVal = e.display.toDouble(&numOk);
+            if (!numOk && valObj.value(QStringLiteral("value")).isDouble()) {
+                numVal = valObj.value(QStringLiteral("value")).toDouble();
+                numOk = true;
+            }
+            if (numOk && std::isfinite(numVal)) {
+                e.history.append(numVal);
+                while (e.history.size() > 24) {
+                    e.history.removeFirst();
+                }
             }
         }
         next.append(std::move(e));

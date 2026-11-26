@@ -13,6 +13,7 @@
 #include "models/SessionModel.h"
 #include "models/WatchModel.h"
 
+#include <QDateTime>
 #include <QDir>
 #include <QJsonArray>
 #include <QJsonDocument>
@@ -157,6 +158,30 @@ void WorkbenchController::setEngineReadyDemo(const QString &provider,
     setEngineStatus(QStringLiteral("ready"));
     emit configChanged();
     emit sessionChanged();
+}
+
+void WorkbenchController::setAgentPhaseDemo(const QString &phase) {
+    const QString nextPhase = phase.isEmpty() ? QStringLiteral("idle") : phase;
+    const bool running = (nextPhase != QStringLiteral("idle"));
+    const bool runningChanged = (m_turnRunning != running);
+
+    m_agentPhase = nextPhase;
+    m_turnRunning = running;
+    if (running) {
+        m_turnStartedMs = QDateTime::currentMSecsSinceEpoch() - 6400;
+        if (m_currentStep == 0) {
+            m_currentStep = 2;
+        }
+    } else {
+        m_turnStartedMs = 0;
+        m_currentStep = 0;
+        m_currentToolTitle.clear();
+    }
+
+    emit agentPhaseChanged();
+    if (runningChanged) {
+        emit turnRunningChanged();
+    }
 }
 
 void WorkbenchController::setEngineStatus(const QString &status, const QString &error) {
@@ -317,14 +342,34 @@ void WorkbenchController::onEngineEvent(const QString &kind, quint64 seq, double
             emit turnRunningChanged();
             updatePollingRate();
         }
-        m_conversation->startAssistantMessage();
+        m_agentPhase = QStringLiteral("waiting");
+        m_turnStartedMs = QDateTime::currentMSecsSinceEpoch();
+        m_currentStep = 0;
+        m_currentToolTitle.clear();
+        emit agentPhaseChanged();
+    } else if (kind == QStringLiteral("llm_request")) {
+        m_currentStep = data.value(QStringLiteral("step")).toInt(m_currentStep);
+        if (m_agentPhase != QStringLiteral("approval")) {
+            m_agentPhase = QStringLiteral("waiting");
+        }
+        emit agentPhaseChanged();
+    } else if (kind == QStringLiteral("reasoning_delta")) {
+        m_conversation->appendReasoningDelta(data.value(QStringLiteral("delta")).toString());
+        m_agentPhase = QStringLiteral("thinking");
+        emit agentPhaseChanged();
     } else if (kind == QStringLiteral("text_delta")) {
         m_conversation->appendAssistantDelta(data.value(QStringLiteral("delta")).toString());
+        m_agentPhase = QStringLiteral("responding");
+        emit agentPhaseChanged();
     } else if (kind == QStringLiteral("tool_call")) {
+        const QString name = data.value(QStringLiteral("name")).toString();
         m_conversation->addToolCall(
             data.value(QStringLiteral("id")).toString(),
-            data.value(QStringLiteral("name")).toString(),
+            name,
             data.value(QStringLiteral("arguments")).toObject());
+        m_agentPhase = QStringLiteral("tool");
+        m_currentToolTitle = ConversationModel::toolTitle(name);
+        emit agentPhaseChanged();
     } else if (kind == QStringLiteral("tool_result")) {
         m_conversation->upsertToolResult(
             data.value(QStringLiteral("id")).toString(),
@@ -334,12 +379,22 @@ void WorkbenchController::onEngineEvent(const QString &kind, quint64 seq, double
             data.value(QStringLiteral("hard_denied")).toBool(false),
             data.value(QStringLiteral("result")).toObject(),
             data.value(QStringLiteral("error")).toString());
+        m_agentPhase = QStringLiteral("waiting");
+        emit agentPhaseChanged();
     } else if (kind == QStringLiteral("approval_required")) {
         enqueueApproval(data);
+        m_agentPhase = QStringLiteral("approval");
+        emit agentPhaseChanged();
     } else if (kind == QStringLiteral("approval_resolved")) {
         removeApprovalById(data.value(QStringLiteral("request_id")).toString());
+        m_agentPhase = QStringLiteral("tool");
+        emit agentPhaseChanged();
     } else if (kind == QStringLiteral("turn_completed")) {
+        m_conversation->finishReasoning();
         m_conversation->finishAssistantMessage(data.value(QStringLiteral("text")).toString());
+        m_agentPhase = QStringLiteral("idle");
+        m_currentToolTitle.clear();
+        emit agentPhaseChanged();
         if (m_turnRunning) {
             m_turnRunning = false;
             emit turnRunningChanged();
@@ -359,8 +414,12 @@ void WorkbenchController::onEngineEvent(const QString &kind, quint64 seq, double
         refreshSnapshot();
         refreshSessions();
     } else if (kind == QStringLiteral("turn_error")) {
+        m_conversation->finishReasoning();
         m_conversation->finishAssistantMessage();
         m_conversation->addNotice(QStringLiteral("error"), data.value(QStringLiteral("error")).toString());
+        m_agentPhase = QStringLiteral("idle");
+        m_currentToolTitle.clear();
+        emit agentPhaseChanged();
         if (m_turnRunning) {
             m_turnRunning = false;
             emit turnRunningChanged();
@@ -375,6 +434,11 @@ void WorkbenchController::onEngineStderr(const QString &line) {
 
 void WorkbenchController::onEngineExited(int exitCode, const QString &reason) {
     Q_UNUSED(exitCode);
+    m_conversation->finishReasoning();
+    m_conversation->finishAssistantMessage();
+    m_agentPhase = QStringLiteral("idle");
+    m_currentToolTitle.clear();
+    emit agentPhaseChanged();
     if (m_turnRunning) {
         m_turnRunning = false;
         emit turnRunningChanged();
@@ -601,6 +665,7 @@ void WorkbenchController::sendMessage(const QString &text) {
         return;
     }
     m_demoSeeded = false;
+    m_lastUserText = trimmed;
     m_conversation->appendUserMessage(trimmed);
 
     if (!m_engine->isRunning()) {
@@ -609,6 +674,11 @@ void WorkbenchController::sendMessage(const QString &text) {
     }
 
     m_turnRunning = true;
+    m_agentPhase = QStringLiteral("waiting");
+    m_turnStartedMs = QDateTime::currentMSecsSinceEpoch();
+    m_currentStep = 0;
+    m_currentToolTitle.clear();
+    emit agentPhaseChanged();
     emit turnRunningChanged();
     updatePollingRate();
 
@@ -616,6 +686,11 @@ void WorkbenchController::sendMessage(const QString &text) {
     params.insert(QStringLiteral("message"), trimmed);
     m_engine->sendRequest(QStringLiteral("chat"), params, [this](bool ok, const QJsonObject &, const QString &err) {
         if (!ok) {
+            m_conversation->finishReasoning();
+            m_conversation->finishAssistantMessage();
+            m_agentPhase = QStringLiteral("idle");
+            m_currentToolTitle.clear();
+            emit agentPhaseChanged();
             if (m_turnRunning) {
                 m_turnRunning = false;
                 emit turnRunningChanged();
@@ -626,11 +701,22 @@ void WorkbenchController::sendMessage(const QString &text) {
     });
 }
 
+void WorkbenchController::retryLastTurn() {
+    if (!m_lastUserText.isEmpty() && !m_turnRunning) {
+        sendMessage(m_lastUserText);
+    }
+}
+
 void WorkbenchController::abortTurn() {
     if (!m_engine->isRunning()) {
         return;
     }
     m_engine->sendRequest(QStringLiteral("abort"), QJsonObject(), [this](bool, const QJsonObject &, const QString &) {
+        m_conversation->finishReasoning();
+        m_conversation->finishAssistantMessage();
+        m_agentPhase = QStringLiteral("idle");
+        m_currentToolTitle.clear();
+        emit agentPhaseChanged();
         if (m_turnRunning) {
             m_turnRunning = false;
             emit turnRunningChanged();

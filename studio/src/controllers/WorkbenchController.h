@@ -28,6 +28,10 @@ class WorkbenchController : public QObject {
     Q_PROPERTY(QString engineStatus READ engineStatus NOTIFY engineStatusChanged)
     Q_PROPERTY(QString engineError READ engineError NOTIFY engineStatusChanged)
     Q_PROPERTY(bool turnRunning READ turnRunning NOTIFY turnRunningChanged)
+    Q_PROPERTY(QString agentPhase READ agentPhase NOTIFY agentPhaseChanged)
+    Q_PROPERTY(qint64 turnStartedMs READ turnStartedMs NOTIFY agentPhaseChanged)
+    Q_PROPERTY(int currentStep READ currentStep NOTIFY agentPhaseChanged)
+    Q_PROPERTY(QString currentToolTitle READ currentToolTitle NOTIFY agentPhaseChanged)
     Q_PROPERTY(QString provider READ provider NOTIFY configChanged)
     Q_PROPERTY(QString model READ model NOTIFY configChanged)
     Q_PROPERTY(QString interlockMode READ interlockMode NOTIFY configChanged)
@@ -69,6 +73,10 @@ public:
     QString engineStatus() const { return m_engineStatus; }
     QString engineError() const { return m_engineError; }
     bool turnRunning() const { return m_turnRunning; }
+    QString agentPhase() const { return m_agentPhase; }
+    qint64 turnStartedMs() const { return m_turnStartedMs; }
+    int currentStep() const { return m_currentStep; }
+    QString currentToolTitle() const { return m_currentToolTitle; }
     QString provider() const { return m_provider; }
     QString model() const { return m_model; }
     QString interlockMode() const { return m_interlockMode; }
@@ -114,8 +122,10 @@ public:
     void setStatusCardText(const QString &md);
     void setTokenUsageText(const QString &text);
     void setEngineReadyDemo(const QString &provider, const QString &model, const QString &mode, const QString &sessionId);
+    void setAgentPhaseDemo(const QString &phase);
 
     Q_INVOKABLE void sendMessage(const QString &text);
+    Q_INVOKABLE void retryLastTurn();
     Q_INVOKABLE void abortTurn();
     Q_INVOKABLE void resolveApproval(const QString &requestId,
                                      bool approved,
@@ -159,6 +169,7 @@ public:
 signals:
     void engineStatusChanged();
     void turnRunningChanged();
+    void agentPhaseChanged();
     void configChanged();
     void sessionChanged();
     void telemetryChanged();
@@ -221,6 +232,11 @@ private:
     QString m_engineStatus = QStringLiteral("stopped");
     QString m_engineError;
     bool m_turnRunning = false;
+    QString m_agentPhase = QStringLiteral("idle");
+    qint64 m_turnStartedMs = 0;
+    int m_currentStep = 0;
+    QString m_currentToolTitle;
+    QString m_lastUserText;
     QString m_provider;
     QString m_model;
     QString m_interlockMode = QStringLiteral("interactive");

@@ -15,33 +15,33 @@ struct ToolMeta {
 
 const QHash<QString, ToolMeta> &toolMetaMap() {
     static const QHash<QString, ToolMeta> map = {
-        {QStringLiteral("read_file"),                 {"Read File",                 "file-code-2",    "read_only"}},
-        {QStringLiteral("edit_file"),                 {"Edit File",                 "file-diff",      "workspace_write"}},
-        {QStringLiteral("write_file"),                {"Write File",                "file-code-2",    "workspace_write"}},
-        {QStringLiteral("list_files"),                {"List Workspace Files",      "folder",         "read_only"}},
-        {QStringLiteral("search_files"),              {"Search Files",              "search",         "read_only"}},
-        {QStringLiteral("run_shell"),                 {"Run Shell Command",         "terminal",       "shell"}},
-        {QStringLiteral("inspect_project"),           {"Inspect MCU Project",       "folder-open",    "read_only"}},
-        {QStringLiteral("build_firmware"),            {"Build Firmware",            "hammer",         "workspace_write"}},
-        {QStringLiteral("generate_compile_commands"), {"Generate compile_commands", "wrench",         "workspace_write"}},
-        {QStringLiteral("analyze_footprint"),         {"Analyze Memory Footprint",  "hard-drive",     "read_only"}},
-        {QStringLiteral("inspect_svd"),               {"Inspect SVD Register",      "binary",         "read_only"}},
-        {QStringLiteral("probe_control"),             {"Probe Control",             "plug-zap",       "hardware_state"}},
-        {QStringLiteral("read_memory"),               {"Read Target Memory",        "cpu",            "read_only"}},
-        {QStringLiteral("write_memory"),              {"Write Target Memory",       "zap",            "hardware_danger"}},
-        {QStringLiteral("flash_firmware"),            {"Flash Firmware",            "download",       "hardware_danger"}},
-        {QStringLiteral("inspect_peripheral"),        {"Inspect Peripheral",        "microchip",      "read_only"}},
-        {QStringLiteral("diagnose_peripheral"),       {"Diagnose Peripheral",       "waypoints",      "read_only"}},
-        {QStringLiteral("inspect_board"),             {"Inspect Board Wiring",      "circuit-board",  "read_only"}},
-        {QStringLiteral("watch_variable"),            {"Read Live Watch Variable",  "variable",       "read_only"}},
-        {QStringLiteral("read_debug_log"),            {"Read RTT / UART Log",       "scroll-text",    "read_only"}},
-        {QStringLiteral("diagnose_crash"),            {"Diagnose HardFault Crash",  "bug",            "read_only"}},
-        {QStringLiteral("check_architecture"),        {"Check 4-Layer Architecture","list-checks",    "read_only"}},
-        {QStringLiteral("scaffold_code"),             {"Scaffold Embedded Module",  "wand-sparkles",  "workspace_write"}},
-        {QStringLiteral("inspect_rtos"),              {"Inspect RTOS Tasks",        "layers",         "read_only"}},
-        {QStringLiteral("trace_target"),              {"DWT Trace & Watchpoint",    "timer",          "hardware_state"}},
-        {QStringLiteral("capture_logic"),             {"Logic Analyzer & Protocol", "activity",       "read_only"}},
-        {QStringLiteral("run_hil_tests"),             {"Run HIL Test Suite",        "flask-conical",  "hardware_danger"}},
+        {QStringLiteral("read_file"),                 {QT_TRANSLATE_NOOP("ConversationModel", "Read File"),                  "file-code-2",    "read_only"}},
+        {QStringLiteral("edit_file"),                 {QT_TRANSLATE_NOOP("ConversationModel", "Edit File"),                  "file-diff",      "workspace_write"}},
+        {QStringLiteral("write_file"),                {QT_TRANSLATE_NOOP("ConversationModel", "Write File"),                 "file-code-2",    "workspace_write"}},
+        {QStringLiteral("list_files"),                {QT_TRANSLATE_NOOP("ConversationModel", "List Workspace Files"),       "folder",         "read_only"}},
+        {QStringLiteral("search_files"),              {QT_TRANSLATE_NOOP("ConversationModel", "Search Files"),               "search",         "read_only"}},
+        {QStringLiteral("run_shell"),                 {QT_TRANSLATE_NOOP("ConversationModel", "Run Shell Command"),          "terminal",       "shell"}},
+        {QStringLiteral("inspect_project"),           {QT_TRANSLATE_NOOP("ConversationModel", "Inspect MCU Project"),        "folder-open",    "read_only"}},
+        {QStringLiteral("build_firmware"),            {QT_TRANSLATE_NOOP("ConversationModel", "Build Firmware"),             "hammer",         "workspace_write"}},
+        {QStringLiteral("generate_compile_commands"), {QT_TRANSLATE_NOOP("ConversationModel", "Generate compile_commands"),  "wrench",         "workspace_write"}},
+        {QStringLiteral("analyze_footprint"),         {QT_TRANSLATE_NOOP("ConversationModel", "Analyze Memory Footprint"),   "hard-drive",     "read_only"}},
+        {QStringLiteral("inspect_svd"),               {QT_TRANSLATE_NOOP("ConversationModel", "Inspect SVD Register"),       "binary",         "read_only"}},
+        {QStringLiteral("probe_control"),             {QT_TRANSLATE_NOOP("ConversationModel", "Probe Control"),              "plug-zap",       "hardware_state"}},
+        {QStringLiteral("read_memory"),               {QT_TRANSLATE_NOOP("ConversationModel", "Read Target Memory"),         "cpu",            "read_only"}},
+        {QStringLiteral("write_memory"),              {QT_TRANSLATE_NOOP("ConversationModel", "Write Target Memory"),        "zap",            "hardware_danger"}},
+        {QStringLiteral("flash_firmware"),            {QT_TRANSLATE_NOOP("ConversationModel", "Flash Firmware"),             "download",       "hardware_danger"}},
+        {QStringLiteral("inspect_peripheral"),        {QT_TRANSLATE_NOOP("ConversationModel", "Inspect Peripheral"),         "microchip",      "read_only"}},
+        {QStringLiteral("diagnose_peripheral"),       {QT_TRANSLATE_NOOP("ConversationModel", "Diagnose Peripheral"),        "waypoints",      "read_only"}},
+        {QStringLiteral("inspect_board"),             {QT_TRANSLATE_NOOP("ConversationModel", "Inspect Board Wiring"),       "circuit-board",  "read_only"}},
+        {QStringLiteral("watch_variable"),            {QT_TRANSLATE_NOOP("ConversationModel", "Read Live Watch Variable"),   "variable",       "read_only"}},
+        {QStringLiteral("read_debug_log"),            {QT_TRANSLATE_NOOP("ConversationModel", "Read RTT / UART Log"),        "scroll-text",    "read_only"}},
+        {QStringLiteral("diagnose_crash"),            {QT_TRANSLATE_NOOP("ConversationModel", "Diagnose HardFault Crash"),   "bug",            "read_only"}},
+        {QStringLiteral("check_architecture"),        {QT_TRANSLATE_NOOP("ConversationModel", "Check 4-Layer Architecture"), "list-checks",    "read_only"}},
+        {QStringLiteral("scaffold_code"),             {QT_TRANSLATE_NOOP("ConversationModel", "Scaffold Embedded Module"),   "wand-sparkles",  "workspace_write"}},
+        {QStringLiteral("inspect_rtos"),              {QT_TRANSLATE_NOOP("ConversationModel", "Inspect RTOS Tasks"),         "layers",         "read_only"}},
+        {QStringLiteral("trace_target"),              {QT_TRANSLATE_NOOP("ConversationModel", "DWT Trace & Watchpoint"),     "timer",          "hardware_state"}},
+        {QStringLiteral("capture_logic"),             {QT_TRANSLATE_NOOP("ConversationModel", "Logic Analyzer & Protocol"),  "activity",       "read_only"}},
+        {QStringLiteral("run_hil_tests"),             {QT_TRANSLATE_NOOP("ConversationModel", "Run HIL Test Suite"),         "flask-conical",  "hardware_danger"}},
     };
     return map;
 }
@@ -62,7 +62,8 @@ QVariant ConversationModel::data(const QModelIndex &index, int role) const {
     if (!index.isValid() || index.row() < 0 || index.row() >= m_entries.size()) {
         return {};
     }
-    const Entry &e = m_entries.at(index.row());
+    const int row = index.row();
+    const Entry &e = m_entries.at(row);
     switch (role) {
     case KindRole:       return e.kind;
     case RoleRole:       return e.kind;
@@ -70,7 +71,14 @@ QVariant ConversationModel::data(const QModelIndex &index, int role) const {
     case StreamingRole:  return e.streaming;
     case ToolCallIdRole: return e.toolCallId;
     case ToolNameRole:   return e.toolName;
-    case ToolTitleRole:  return e.toolTitle;
+    case ToolTitleRole: {
+        const auto &map = toolMetaMap();
+        auto it = map.constFind(e.toolName);
+        if (it != map.constEnd()) {
+            return tr(it.value().title);
+        }
+        return e.toolTitle;
+    }
     case ToolIconRole:   return e.toolIcon;
     case RiskLevelRole:  return e.riskLevel;
     case ArgsJsonRole:   return e.argsJson;
@@ -85,6 +93,14 @@ QVariant ConversationModel::data(const QModelIndex &index, int role) const {
     case LevelRole:      return e.level;
     case TimestampRole:  return e.timestamp;
     case DurationMsRole: return e.durationMs;
+    case StartedMsRole:  return e.startedMs;
+    case ExpandedRole:   return e.expanded;
+    case GroupStartRole:
+        return isAssistantTurnKind(e.kind) &&
+               (row == 0 || !isAssistantTurnKind(m_entries.at(row - 1).kind));
+    case GroupEndRole:
+        return isAssistantTurnKind(e.kind) &&
+               (row == m_entries.size() - 1 || !isAssistantTurnKind(m_entries.at(row + 1).kind));
     default:             return {};
     }
 }
@@ -112,6 +128,10 @@ QHash<int, QByteArray> ConversationModel::roleNames() const {
         {LevelRole,      "level"},
         {TimestampRole,  "timestamp"},
         {DurationMsRole, "durationMs"},
+        {StartedMsRole,  "startedMs"},
+        {ExpandedRole,   "expanded"},
+        {GroupStartRole, "groupStart"},
+        {GroupEndRole,   "groupEnd"},
     };
 }
 
@@ -119,9 +139,15 @@ QString ConversationModel::toolTitle(const QString &toolName) {
     const auto &map = toolMetaMap();
     auto it = map.constFind(toolName);
     if (it != map.constEnd()) {
-        return QString::fromUtf8(it.value().title);
+        return tr(it.value().title);
     }
     return toolName;
+}
+
+void ConversationModel::refreshLocalization() {
+    if (!m_entries.isEmpty()) {
+        emit dataChanged(index(0), index(m_entries.size() - 1), {ToolTitleRole});
+    }
 }
 
 QString ConversationModel::toolIcon(const QString &toolName) {
@@ -176,6 +202,22 @@ QString ConversationModel::summarizeResult(const QJsonObject &result,
     return compact.left(137) + QStringLiteral("...");
 }
 
+bool ConversationModel::isAssistantTurnKind(const QString &kind) {
+    return !kind.isEmpty() && kind != QStringLiteral("user") && kind != QStringLiteral("notice");
+}
+
+void ConversationModel::insertEntry(Entry &&entry) {
+    const int row = m_entries.size();
+    beginInsertRows(QModelIndex(), row, row);
+    m_entries.append(std::move(entry));
+    endInsertRows();
+    if (row > 0) {
+        const QModelIndex prev = index(row - 1);
+        emit dataChanged(prev, prev, {GroupEndRole});
+    }
+    emit countChanged();
+}
+
 void ConversationModel::clear() {
     if (m_entries.isEmpty()) {
         return;
@@ -186,20 +228,106 @@ void ConversationModel::clear() {
     emit countChanged();
 }
 
+void ConversationModel::setExpanded(int row, bool expanded) {
+    if (row < 0 || row >= m_entries.size()) {
+        return;
+    }
+    m_entries[row].expanded = expanded;
+    m_entries[row].userToggled = true;
+    const QModelIndex idx = index(row);
+    emit dataChanged(idx, idx, {ExpandedRole});
+}
+
+QString ConversationModel::plainTextAt(int row) const {
+    if (row < 0 || row >= m_entries.size()) {
+        return {};
+    }
+    const Entry &e = m_entries.at(row);
+    if (e.kind == QStringLiteral("tool_call") || e.kind == QStringLiteral("tool_result")) {
+        QStringList parts;
+        if (!e.summary.isEmpty()) {
+            parts.append(e.summary);
+        }
+        if (!e.argsJson.isEmpty()) {
+            parts.append(e.argsJson);
+        }
+        if (!e.resultJson.isEmpty()) {
+            parts.append(e.resultJson);
+        }
+        return parts.join(QLatin1Char('\n'));
+    }
+    return e.text;
+}
+
 void ConversationModel::appendUserMessage(const QString &text, const QString &timestamp) {
     Entry e;
     e.kind = QStringLiteral("user");
     e.text = text;
     e.timestamp = timestamp.isEmpty() ? currentTimeString() : timestamp;
+    insertEntry(std::move(e));
+}
 
-    const int row = m_entries.size();
-    beginInsertRows(QModelIndex(), row, row);
-    m_entries.append(std::move(e));
-    endInsertRows();
-    emit countChanged();
+void ConversationModel::appendReasoningDelta(const QString &delta) {
+    if (delta.isEmpty()) {
+        return;
+    }
+    if (!m_entries.isEmpty() && m_entries.last().kind == QStringLiteral("assistant") && m_entries.last().streaming) {
+        finishAssistantMessage();
+    }
+    if (m_entries.isEmpty() || m_entries.last().kind != QStringLiteral("thinking") || !m_entries.last().streaming) {
+        Entry e;
+        e.kind = QStringLiteral("thinking");
+        e.text = delta;
+        e.streaming = true;
+        e.expanded = true;
+        e.userToggled = false;
+        e.startedMs = QDateTime::currentMSecsSinceEpoch();
+        e.timestamp = currentTimeString();
+        insertEntry(std::move(e));
+        return;
+    }
+    const int row = m_entries.size() - 1;
+    m_entries[row].text += delta;
+    const QModelIndex idx = index(row);
+    emit dataChanged(idx, idx, {TextRole});
+}
+
+void ConversationModel::finishReasoning() {
+    for (int row = m_entries.size() - 1; row >= 0; --row) {
+        Entry &e = m_entries[row];
+        if (e.kind == QStringLiteral("thinking") && e.streaming) {
+            e.streaming = false;
+            e.durationMs = e.startedMs > 0
+                               ? qMax<qint64>(0, QDateTime::currentMSecsSinceEpoch() - e.startedMs)
+                               : 0;
+            if (!e.userToggled) {
+                e.expanded = false;
+            }
+            const QModelIndex idx = index(row);
+            emit dataChanged(idx, idx, {StreamingRole, DurationMsRole, ExpandedRole});
+        }
+    }
+}
+
+void ConversationModel::addThinkingEntry(const QString &text,
+                                         bool streaming,
+                                         qint64 durationMs,
+                                         bool expanded,
+                                         qint64 startedMs,
+                                         const QString &timestamp) {
+    Entry e;
+    e.kind = QStringLiteral("thinking");
+    e.text = text;
+    e.streaming = streaming;
+    e.durationMs = durationMs;
+    e.expanded = expanded;
+    e.startedMs = startedMs;
+    e.timestamp = timestamp.isEmpty() ? currentTimeString() : timestamp;
+    insertEntry(std::move(e));
 }
 
 void ConversationModel::startAssistantMessage(const QString &timestamp) {
+    finishReasoning();
     if (!m_entries.isEmpty() && m_entries.last().kind == QStringLiteral("assistant") && m_entries.last().streaming) {
         return;
     }
@@ -207,15 +335,11 @@ void ConversationModel::startAssistantMessage(const QString &timestamp) {
     e.kind = QStringLiteral("assistant");
     e.streaming = true;
     e.timestamp = timestamp.isEmpty() ? currentTimeString() : timestamp;
-
-    const int row = m_entries.size();
-    beginInsertRows(QModelIndex(), row, row);
-    m_entries.append(std::move(e));
-    endInsertRows();
-    emit countChanged();
+    insertEntry(std::move(e));
 }
 
 void ConversationModel::appendAssistantDelta(const QString &delta) {
+    finishReasoning();
     if (delta.isEmpty()) {
         return;
     }
@@ -229,6 +353,7 @@ void ConversationModel::appendAssistantDelta(const QString &delta) {
 }
 
 void ConversationModel::finishAssistantMessage(const QString &finalText) {
+    finishReasoning();
     if (!m_entries.isEmpty() && m_entries.last().kind == QStringLiteral("assistant") && m_entries.last().streaming) {
         const int row = m_entries.size() - 1;
         m_entries[row].streaming = false;
@@ -245,11 +370,7 @@ void ConversationModel::finishAssistantMessage(const QString &finalText) {
         e.text = finalText;
         e.streaming = false;
         e.timestamp = currentTimeString();
-        const int row = m_entries.size();
-        beginInsertRows(QModelIndex(), row, row);
-        m_entries.append(std::move(e));
-        endInsertRows();
-        emit countChanged();
+        insertEntry(std::move(e));
     }
 }
 
@@ -257,6 +378,7 @@ void ConversationModel::addToolCall(const QString &id,
                                     const QString &name,
                                     const QJsonObject &arguments,
                                     const QString &riskLevel) {
+    finishReasoning();
     // Finish any currently streaming assistant bubble before tool call card
     if (!m_entries.isEmpty() && m_entries.last().kind == QStringLiteral("assistant") && m_entries.last().streaming) {
         finishAssistantMessage();
@@ -274,12 +396,7 @@ void ConversationModel::addToolCall(const QString &id,
     e.summary = tr("Running...");
     e.timestamp = currentTimeString();
     e.startedMs = QDateTime::currentMSecsSinceEpoch();
-
-    const int row = m_entries.size();
-    beginInsertRows(QModelIndex(), row, row);
-    m_entries.append(std::move(e));
-    endInsertRows();
-    emit countChanged();
+    insertEntry(std::move(e));
 }
 
 int ConversationModel::findToolCallRow(const QString &id) const {
@@ -328,17 +445,13 @@ void ConversationModel::upsertToolResult(const QString &id,
 }
 
 void ConversationModel::addNotice(const QString &level, const QString &text) {
+    finishReasoning();
     Entry e;
     e.kind = QStringLiteral("notice");
     e.level = level.isEmpty() ? QStringLiteral("info") : level;
     e.text = text;
     e.timestamp = currentTimeString();
-
-    const int row = m_entries.size();
-    beginInsertRows(QModelIndex(), row, row);
-    m_entries.append(std::move(e));
-    endInsertRows();
-    emit countChanged();
+    insertEntry(std::move(e));
 }
 
 void ConversationModel::loadFromSessionMessages(const QJsonArray &messages) {
@@ -354,6 +467,15 @@ void ConversationModel::loadFromSessionMessages(const QJsonArray &messages) {
             e.text = msg.value(QStringLiteral("content")).toString();
             m_entries.append(std::move(e));
         } else if (role == QStringLiteral("assistant")) {
+            const QString reasoning = msg.value(QStringLiteral("reasoning")).toString();
+            if (!reasoning.isEmpty()) {
+                Entry re;
+                re.kind = QStringLiteral("thinking");
+                re.text = reasoning;
+                re.streaming = false;
+                re.expanded = false;
+                m_entries.append(std::move(re));
+            }
             const QString content = msg.value(QStringLiteral("content")).toString();
             if (!content.isEmpty()) {
                 Entry e;
