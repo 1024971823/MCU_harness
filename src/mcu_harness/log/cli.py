@@ -25,6 +25,7 @@ import time
 from mcu_harness.probe import MockProbe, ProbeError, ProbeManager
 
 from .rtt_collector import RttLogCollector
+from .uart_collector import UartError, UartLogCollector, list_serial_ports
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -40,8 +41,61 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("--wait", type=float, default=0.3, help="单次拉取前等待采集秒数，默认 0.3s")
     ap.add_argument("-f", "--follow", action="store_true", help="持续跟踪输出（Ctrl+C 退出）")
     ap.add_argument("--mock", action="store_true", help="使用模拟探针注入测试日志")
+    ap.add_argument("--uart", metavar="PORT", help="改用串口 UART 模式读取日志（如 /dev/ttyACM0 或 /dev/ttyUSB0）")
+    ap.add_argument("-b", "--baud", type=int, default=115200, help="串口波特率，默认 115200")
+    ap.add_argument("--list-ports", action="store_true", help="列出当前主机可用的串口设备")
     ap.add_argument("--json", action="store_true", help="输出 JSON 格式")
     args = ap.parse_args(argv)
+
+    if args.list_ports:
+        ports = list_serial_ports()
+        if args.json:
+            print(json.dumps([p.to_dict() for p in ports], indent=2, ensure_ascii=False))
+        elif not ports:
+            print("(no serial ports found)")
+        else:
+            for p in ports:
+                print(f"  {p.port:<18} {p.description}  {p.by_id or ''}".rstrip())
+        return 0
+
+    if args.uart:
+        uart_col = UartLogCollector(port=args.uart, baudrate=args.baud)
+        try:
+            uart_col.start()
+            if args.follow:
+                last_seq = 0
+                try:
+                    while True:
+                        res, _ = uart_col.read(
+                            tail_lines=args.tail,
+                            since_seq=last_seq if last_seq else None,
+                            pattern=args.pattern,
+                            regex=args.regex,
+                            context_lines=args.context,
+                            include_partial=False,
+                            auto_start=False,
+                        )
+                        for e in res.entries:
+                            print(f"[{e.seq}] {e.text}", flush=True)
+                            last_seq = max(last_seq, e.seq)
+                        time.sleep(0.05)
+                except KeyboardInterrupt:
+                    return 0
+            time.sleep(max(0.0, args.wait))
+            res, st = uart_col.read(
+                tail_lines=args.tail,
+                pattern=args.pattern,
+                regex=args.regex,
+                context_lines=args.context,
+                auto_start=False,
+            )
+            print(json.dumps({"status": st.to_dict(), **res.to_dict()}, indent=2, ensure_ascii=False) if args.json else res.to_text())
+            return 0
+        except (UartError, ValueError) as e:
+            print(f"error: {e}", file=sys.stderr)
+            return 1
+        finally:
+            uart_col.stop()
 
     block_addr = int(args.block_addr, 0) if args.block_addr else None
     pm = ProbeManager()

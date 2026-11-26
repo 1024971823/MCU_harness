@@ -3,6 +3,7 @@
 特点：
     * 附着连接时只调用 open -> set_tif(SWD) -> connect，不触发 reset，保护芯片现场。
     * 读外设寄存器 / RAM 时无需暂停 CPU（走 AHB-AP 非侵入式访问），降低对 Ozone 和实时业务的干扰。
+    * 恢复运行走 JLINKARM_Go 继续执行而不复位；烧录与显式 reset 单独提供受安全护栏保护的接口。
     * 自动查找 libjlinkarm.so（除标准路径外，还会顺着 JLinkExe / JLinkGDBServerCLExe 的真实目录寻找）。
 """
 
@@ -10,10 +11,46 @@ from __future__ import annotations
 
 import os
 import shutil
+import time
 from pathlib import Path
 from typing import Any
 
-from .base import DebugProbe, ProbeError, ProbeInfo
+from .base import DebugProbe, FlashResult, ProbeError, ProbeInfo, ResetResult
+
+# 标准小写核心寄存器名 -> J-Link 可能使用的寄存器名候选
+_JLINK_REG_ALIASES: dict[str, tuple[str, ...]] = {
+    "r0": ("R0",),
+    "r1": ("R1",),
+    "r2": ("R2",),
+    "r3": ("R3",),
+    "r4": ("R4",),
+    "r5": ("R5",),
+    "r6": ("R6",),
+    "r7": ("R7",),
+    "r8": ("R8",),
+    "r9": ("R9",),
+    "r10": ("R10",),
+    "r11": ("R11",),
+    "r12": ("R12",),
+    "sp": ("R13 (SP)", "SP", "R13"),
+    "lr": ("R14", "R14 (LR)", "LR"),
+    "pc": ("R15 (PC)", "PC", "R15"),
+    "xpsr": ("XPSR", "CPSR"),
+    "msp": ("MSP", "MSP_NS", "MSP_S"),
+    "psp": ("PSP", "PSP_NS", "PSP_S"),
+    "primask": ("PRIMASK", "PRIMASK_NS"),
+    "basepri": ("BASEPRI", "BASEPRI_NS"),
+    "faultmask": ("FAULTMASK", "FAULTMASK_NS"),
+    "control": ("CONTROL", "CONTROL_NS"),
+    "msplim": ("MSPLIM", "MSPLIM_NS", "MSPLIM_S"),
+    "psplim": ("PSPLIM", "PSPLIM_NS", "PSPLIM_S"),
+}
+
+_DEFAULT_REG_QUERY = (
+    "r0", "r1", "r2", "r3", "r4", "r5", "r6", "r7",
+    "r8", "r9", "r10", "r11", "r12", "sp", "lr", "pc",
+    "xpsr", "msp", "psp", "msplim", "psplim", "control", "primask",
+)
 
 
 def normalize_device(device: str | None = None) -> str:
@@ -74,7 +111,6 @@ def _discover_jlink_dll(explicit_path: str | os.PathLike | None = None) -> str |
             raise ProbeError(f"Configured J-Link library not found: {p}")
         return str(p)
 
-    # 顺着 PATH 中的 JLinkExe / JLinkGDBServerCLExe 解析符号链接，定位其同目录下的 libjlinkarm.so*
     candidates: list[Path] = []
     for exe in ("JLinkExe", "JLinkGDBServerCLExe"):
         found = shutil.which(exe)
@@ -104,7 +140,6 @@ def _load_pylink_library(dll_path: str | None = None):
     except ImportError as e:
         raise ProbeError("pylink-square is not installed (run: pip install pylink-square)") from e
 
-    # 1. 若明确找到或指定了路径，直接加载；否则交给 pylink 默认探测
     discovered = _discover_jlink_dll(dll_path)
     if discovered:
         try:
@@ -142,7 +177,7 @@ class JLinkProbe(DebugProbe):
 
     @property
     def raw_jlink(self) -> Any:
-        """暴露底层 pylink.JLink 实例，供后续 RTT 等模块复用同一连接。"""
+        """暴露底层 pylink.JLink 实例，供后续模块复用同一连接。"""
         self._require_connected()
         return self._jlink
 
@@ -257,6 +292,37 @@ class JLinkProbe(DebugProbe):
         except Exception as e:
             raise ProbeError(f"Failed to read {count} bytes at 0x{address:08X}: {e}") from e
 
+    def write_u32(self, address: int, values: list[int]) -> None:
+        self._require_connected()
+        if address % 4 != 0:
+            raise ProbeError(f"Unaligned 32-bit write at 0x{address:08X}")
+        if not values:
+            return
+        try:
+            self._jlink.memory_write32(address, [int(v) & 0xFFFFFFFF for v in values])
+        except Exception as e:
+            raise ProbeError(f"Failed to write {len(values)}x32-bit at 0x{address:08X}: {e}") from e
+
+    def write_u16(self, address: int, values: list[int]) -> None:
+        self._require_connected()
+        if address % 2 != 0:
+            raise ProbeError(f"Unaligned 16-bit write at 0x{address:08X}")
+        if not values:
+            return
+        try:
+            self._jlink.memory_write16(address, [int(v) & 0xFFFF for v in values])
+        except Exception as e:
+            raise ProbeError(f"Failed to write {len(values)}x16-bit at 0x{address:08X}: {e}") from e
+
+    def write_u8(self, address: int, values: list[int]) -> None:
+        self._require_connected()
+        if not values:
+            return
+        try:
+            self._jlink.memory_write8(address, [int(v) & 0xFF for v in values])
+        except Exception as e:
+            raise ProbeError(f"Failed to write {len(values)} bytes at 0x{address:08X}: {e}") from e
+
     def halt(self) -> bool:
         self._require_connected()
         try:
@@ -266,19 +332,21 @@ class JLinkProbe(DebugProbe):
         except Exception as e:
             raise ProbeError(f"halt failed: {e}") from e
 
+    def _go_without_reset(self) -> None:
+        if hasattr(self._jlink, "go"):
+            self._jlink.go()
+        elif hasattr(getattr(self._jlink, "_dll", None), "JLINKARM_Go"):
+            self._jlink._dll.JLINKARM_Go()
+        else:
+            self._jlink.restart()
+
     def resume(self) -> bool:
         self._require_connected()
         try:
             was_halted = bool(self._jlink.halted())
             if not was_halted:
                 return False
-            # 单纯恢复内核从当前 PC 继续向下执行，不触发任何硬件/内核复位
-            if hasattr(self._jlink, "go"):
-                self._jlink.go()
-            elif hasattr(getattr(self._jlink, "_dll", None), "JLINKARM_Go"):
-                self._jlink._dll.JLINKARM_Go()
-            else:
-                self._jlink.restart()
+            self._go_without_reset()
             return was_halted
         except Exception as e:
             raise ProbeError(f"resume failed: {e}") from e
@@ -289,6 +357,103 @@ class JLinkProbe(DebugProbe):
             return bool(self._jlink.halted())
         except Exception as e:
             raise ProbeError(f"halted() query failed: {e}") from e
+
+    def read_core_regs(self, names: list[str] | None = None) -> dict[str, int]:
+        self._require_connected()
+        jl = self._jlink
+        try:
+            idx_list = jl.register_list()
+            by_upper: dict[str, int] = {}
+            for reg_idx in idx_list:
+                rname = str(jl.register_name(reg_idx)).strip()
+                by_upper[rname.upper()] = reg_idx
+        except Exception as e:
+            raise ProbeError(f"Failed to query J-Link register list: {e}") from e
+
+        wanted = [n.strip().lower() for n in names] if names else list(_DEFAULT_REG_QUERY)
+        out: dict[str, int] = {}
+        for canonical in wanted:
+            candidates = _JLINK_REG_ALIASES.get(canonical, (canonical.upper(),))
+            matched_idx = next((by_upper[c.upper()] for c in candidates if c.upper() in by_upper), None)
+            if matched_idx is None:
+                if names is not None:
+                    raise ProbeError(f"Core register {canonical!r} not supported on target {self.device}")
+                continue
+            try:
+                out[canonical] = int(jl.register_read(matched_idx)) & 0xFFFFFFFF
+            except Exception as e:
+                if names is not None:
+                    raise ProbeError(f"Failed to read core register {canonical!r}: {e}") from e
+        return out
+
+    def reset(self, *, halt: bool = False) -> ResetResult:
+        self._require_connected()
+        try:
+            self._jlink.reset(ms=0, halt=halt)
+            if not halt and bool(self._jlink.halted()):
+                self._go_without_reset()
+            halted_now = bool(self._jlink.halted())
+            pc_str = None
+            sp_str = None
+            if halted_now:
+                regs = self.read_core_regs()
+                if "pc" in regs:
+                    pc_str = f"0x{regs['pc']:08X}"
+                if "sp" in regs:
+                    sp_str = f"0x{regs['sp']:08X}"
+            return ResetResult(
+                halted=halted_now,
+                pc=pc_str,
+                sp=sp_str,
+                message="Target reset" + (" and halted" if halted_now else " and running"),
+            )
+        except Exception as e:
+            raise ProbeError(f"reset(halt={halt}) failed: {e}") from e
+
+    def flash(
+        self,
+        firmware_path: str | os.PathLike,
+        *,
+        address: int | None = None,
+        verify: bool = True,
+        reset_after: bool = True,
+        run_after: bool = True,
+    ) -> FlashResult:
+        self._require_connected()
+        t0 = time.monotonic()
+        p = Path(firmware_path).expanduser().resolve()
+        if not p.is_file():
+            raise ProbeError(f"Firmware file not found: {p}")
+
+        suffix = p.suffix.lower()
+        if suffix == ".bin" and address is None:
+            raise ProbeError("Flashing a raw .bin file requires specifying a base address (e.g. 0x08000000)")
+
+        load_addr = address if address is not None else 0
+        try:
+            self._jlink.halt()
+            # pylink.flash_file 对 .elf / .hex 会忽略 addr 并使用文件内嵌段地址；对 .bin 使用 addr
+            written = self._jlink.flash_file(str(p), addr=load_addr)
+            if isinstance(written, int) and written < 0:
+                raise ProbeError(f"J-Link flash_file returned error code {written}")
+            if reset_after:
+                self.reset(halt=not run_after)
+            elif run_after:
+                self.resume()
+            halted_now = bool(self._jlink.halted())
+            return FlashResult(
+                success=True,
+                firmware_path=str(p),
+                bytes_written=int(written) if isinstance(written, int) and written >= 0 else p.stat().st_size,
+                address=f"0x{address:08X}" if address is not None else "auto(.elf/.hex)",
+                verified=verify,
+                reset_performed=reset_after,
+                running=not halted_now,
+                duration_s=time.monotonic() - t0,
+                message="J-Link flash succeeded",
+            )
+        except Exception as e:
+            raise ProbeError(f"J-Link flash failed for {p}: {e}") from e
 
     # ---- SEGGER RTT ------------------------------------------------------
 
@@ -316,6 +481,15 @@ class JLinkProbe(DebugProbe):
             return bytes(data)
         except Exception as e:
             raise ProbeError(f"rtt_read(ch={channel}) failed: {e}") from e
+
+    def rtt_write(self, data: bytes, channel: int = 0) -> int:
+        self._require_connected()
+        if not data:
+            return 0
+        try:
+            return int(self._jlink.rtt_write(channel, list(data)))
+        except Exception as e:
+            raise ProbeError(f"rtt_write(ch={channel}) failed: {e}") from e
 
     def _require_connected(self) -> None:
         if not self.is_connected():

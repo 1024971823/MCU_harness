@@ -2,14 +2,14 @@
 
 > 本文件会随开发推进持续更新，记录“为什么这么选”，方便以后回顾。
 
-## 1. 目标硬件
+## 1. 目标硬件与通用扩展覆盖
 
-| 项目 | 内容 | 对 Harness 的影响 |
+| 项目 | 首发参考硬件 | 现已扩展支持的通用范围 |
 |---|---|---|
-| MCU | **STM32H563**（Cortex-M33，Armv8-M Mainline，FPU，TrustZone） | 死机诊断要按 Armv8-M 处理（见第 4 节） |
-| 调试器 | **SEGGER J-Link** | 调试后端以 J-Link 生态为主，不用 OpenOCD |
-| 人工调试 IDE | **Ozone** | Ozone 给人看，Harness 给 AI 用，两者要能共存 |
-| 主机 | Arch Linux | J-Link 软件包需要从 SEGGER 官网 / AUR 安装 |
+| MCU | **STM32H563**（Cortex-M33，Armv8-M Mainline） | **ARM Cortex-M 全系**（M0/M0+/M23/M3/M4/M7/M33/M55/M85），自动按 `.ioc` / 编译宏识别 STM32/GD32/AT32/RP2040/nRF52 等 |
+| 调试器 | **SEGGER J-Link** | **J-Link**（`pylink-square`）+ **OpenOCD TCL RPC**（兼容 ST-Link、CMSIS-DAP / DAPLink）+ **MockProbe** |
+| 人工调试 IDE | **Ozone** | Ozone 给人看，Harness 给 AI 用，两者非侵入共存 |
+| 主机 | Arch Linux | Linux 跨发行版通用（CMake / Ninja / Make + GCC / OpenOCD / J-Link） |
 
 ## 2. 调试后端选型
 

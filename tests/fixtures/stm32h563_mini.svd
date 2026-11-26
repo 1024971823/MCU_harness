@@ -93,10 +93,47 @@
     </peripheral>
 
     <peripheral>
+      <name>RCC</name>
+      <description>Reset and clock control</description>
+      <groupName>RCC</groupName>
+      <baseAddress>0x44020C00</baseAddress>
+      <registers>
+        <register>
+          <name>AHB2ENR</name>
+          <description>RCC AHB2 peripheral clock register</description>
+          <addressOffset>0x08C</addressOffset>
+          <size>32</size>
+          <access>read-write</access>
+          <resetValue>0x00000000</resetValue>
+          <fields>
+            <field><name>GPIOAEN</name><description>GPIOA clock enable</description><bitOffset>0</bitOffset><bitWidth>1</bitWidth></field>
+            <field><name>GPIOBEN</name><description>GPIOB clock enable</description><bitOffset>1</bitOffset><bitWidth>1</bitWidth></field>
+          </fields>
+        </register>
+        <register>
+          <name>APB2ENR</name>
+          <description>RCC APB2 peripheral clock register</description>
+          <addressOffset>0x0A4</addressOffset>
+          <size>32</size>
+          <access>read-write</access>
+          <resetValue>0x00000000</resetValue>
+          <fields>
+            <field><name>USART1EN</name><description>USART1 clock enable</description><bitOffset>14</bitOffset><bitWidth>1</bitWidth></field>
+          </fields>
+        </register>
+      </registers>
+    </peripheral>
+
+    <peripheral>
       <name>USART1</name>
       <description>Universal synchronous/asynchronous receiver transmitter</description>
       <groupName>USART</groupName>
       <baseAddress>0x40013800</baseAddress>
+      <interrupt>
+        <name>USART1</name>
+        <description>USART1 global interrupt</description>
+        <value>61</value>
+      </interrupt>
       <registers>
         <register>
           <name>CR1</name>
@@ -122,6 +159,24 @@
               <lsb>2</lsb>
               <msb>2</msb>
             </field>
+          </fields>
+        </register>
+        <register>
+          <name>ISR</name>
+          <description>Interrupt and status register</description>
+          <addressOffset>0x1C</addressOffset>
+          <size>32</size>
+          <access>read-only</access>
+          <resetValue>0x000000C0</resetValue>
+          <fields>
+            <field><name>PE</name><description>Parity error</description><bitOffset>0</bitOffset><bitWidth>1</bitWidth></field>
+            <field><name>FE</name><description>Framing error</description><bitOffset>1</bitOffset><bitWidth>1</bitWidth></field>
+            <field><name>NE</name><description>Noise detection flag</description><bitOffset>2</bitOffset><bitWidth>1</bitWidth></field>
+            <field><name>ORE</name><description>Overrun error</description><bitOffset>3</bitOffset><bitWidth>1</bitWidth></field>
+            <field><name>RXNE</name><description>Read data register not empty</description><bitOffset>5</bitOffset><bitWidth>1</bitWidth></field>
+            <field><name>TC</name><description>Transmission complete</description><bitOffset>6</bitOffset><bitWidth>1</bitWidth></field>
+            <field><name>TXE</name><description>Transmit data register empty</description><bitOffset>7</bitOffset><bitWidth>1</bitWidth></field>
+            <field><name>BUSY</name><description>Busy flag</description><bitOffset>16</bitOffset><bitWidth>1</bitWidth></field>
           </fields>
         </register>
       </registers>

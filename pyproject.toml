@@ -1,23 +1,38 @@
 [project]
 name = "mcu-harness"
-version = "0.1.0"
-description = "MCU 调试友好型 Agent Harness：把编译器、调试器、串口/RTT、SVD 接入大模型"
+version = "0.3.0"
+description = "通用 MCU 调试、深度硬件感知与可移植架构 Agent Harness"
 readme = "README.md"
 requires-python = ">=3.10"
-dependencies = ["fastmcp>=4.0", "pylink-square>=2.0"]
+dependencies = [
+    "fastmcp>=4.0",
+    "pylink-square>=2.0",
+    "tomli>=2.0; python_version < '3.11'",
+]
 
 [project.optional-dependencies]
 dev = ["pytest>=7"]
+serial = ["pyserial>=3.5"]
 
 [project.scripts]
-# 命令行入口：mcu-build <工程目录>，用于脱离 AI 单独调试构建模块
+# 工程配置清单自动识别与初始化（mcu-harness.toml）
+mcu-config = "mcu_harness.config.cli:main"
+# 无头编译、编译数据库（compile_commands.json）生成与 .elf/.map 内存版图审计
 mcu-build = "mcu_harness.build.cli:main"
-# 命令行入口：mcu-svd --svd xxx.svd ...，离线查询/解码外设寄存器
+# 离线查询/解码 CMSIS-SVD 外设寄存器
 mcu-svd = "mcu_harness.svd.cli:main"
-# 命令行入口：mcu-probe info/read/inspect，验证 J-Link 硬件连接与寄存器读取
+# J-Link / OpenOCD / Mock 连板读写、核心寄存器、安全烧录与外设解码
 mcu-probe = "mcu_harness.probe.cli:main"
-# 命令行入口：mcu-log，后台非阻塞读取 SEGGER RTT 日志
+# 非阻塞 SEGGER RTT 与串口 UART 环形日志采集与跟踪
 mcu-log = "mcu_harness.log.cli:main"
+# Cortex-M 全系列死机自动尸检与 ELF/DWARF 源码行号还原
+mcu-crash = "mcu_harness.crash.cli:main"
+# DWARF v2~v5 无停机实时结构体变量读取（Live Watch）与高频采样
+mcu-watch = "mcu_harness.dwarf.cli:main"
+# 跨外设因果体检医生（RCC/NVIC/GPIO/ErrorFlags）与 .ioc 真机引脚漂移核验
+mcu-doctor = "mcu_harness.diagnose.cli:main"
+# 分层代码架构/ISR 并发安全检查与跨芯片 PAL/BSP/Service 脚手架生成
+mcu-arch = "mcu_harness.arch.cli:main"
 # MCP Server 入口（stdio 模式）
 mcu-harness = "mcu_harness.server:main"
 

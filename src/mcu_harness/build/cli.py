@@ -14,7 +14,9 @@ import json
 import sys
 from pathlib import Path
 
+from .compdb import generate_compile_commands
 from .diagnostics import parse_build_output
+from .footprint import analyze_footprint
 from .runner import build_firmware
 
 
@@ -38,7 +40,40 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("-j", "--jobs", type=int)
     ap.add_argument("--json", action="store_true", help="输出 JSON（AI/程序使用的格式）")
     ap.add_argument("--parse-log", metavar="FILE", help="仅解析已有的编译日志文件")
+    ap.add_argument("--compdb", action="store_true", help="仅生成 compile_commands.json（支持 CMake 与 Makefile 干跑）")
+    ap.add_argument("--footprint", nargs="?", const="AUTO", metavar="ELF", help="分析固件 .elf/.map 内存版图与 DMA/栈风险")
+    ap.add_argument("--map", dest="map_file", metavar="MAP", help="配合 --footprint 显式指定 .map 文件路径")
     args = ap.parse_args(argv)
+
+    if args.footprint is not None:
+        elf_arg = None if args.footprint == "AUTO" else args.footprint
+        try:
+            rep = analyze_footprint(elf_path=elf_arg, map_path=args.map_file, project_dir=args.project_dir)
+        except Exception as e:
+            print(f"error: {e}", file=sys.stderr)
+            return 1
+        print(json.dumps(rep.to_dict(), indent=2, ensure_ascii=False) if args.json else rep.to_text())
+        return 0
+
+    if args.compdb:
+        if not args.project_dir:
+            ap.error("project_dir is required with --compdb")
+        res_db = generate_compile_commands(
+            args.project_dir,
+            build_dir=args.build_dir,
+            makefile=args.makefile,
+            extra_args=args.extra_args,
+            build_system=args.build_system,
+            toolchain_file=args.toolchain,
+            generator=args.generator,
+            target=args.target,
+        )
+        if args.json:
+            print(json.dumps(res_db.to_dict(), indent=2, ensure_ascii=False))
+        else:
+            status = "OK" if res_db.success else "FAILED"
+            print(f"[compdb] {status} ({res_db.entry_count} entries) -> {res_db.output_path or res_db.message}")
+        return 0 if res_db.success else 1
 
     if args.parse_log:
         text = Path(args.parse_log).read_text(encoding="utf-8", errors="replace")

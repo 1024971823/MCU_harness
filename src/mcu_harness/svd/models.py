@@ -66,6 +66,18 @@ class SvdRegister:
 
 
 @dataclass(frozen=True)
+class SvdInterrupt:
+    """外设关联的中断号定义（来自 SVD <interrupt> 节点）。"""
+
+    name: str
+    value: int  # IRQn 编号（如 USART1_IRQn = 37）
+    description: str = ""
+
+    def to_dict(self) -> dict:
+        return asdict(self)
+
+
+@dataclass(frozen=True)
 class SvdPeripheral:
     """片上外设（例如 GPIOA / RCC / USART1）。"""
 
@@ -75,6 +87,7 @@ class SvdPeripheral:
     group_name: str = ""
     access: str | None = None
     registers: tuple[SvdRegister, ...] = ()
+    interrupts: tuple[SvdInterrupt, ...] = ()
 
     def reg_address(self, reg: SvdRegister) -> int:
         return self.base_address + reg.address_offset

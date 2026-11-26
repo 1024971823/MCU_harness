@@ -262,3 +262,132 @@ def test_mcp_input_validation_and_error_fallbacks(tmp_path):
             default_probe_manager.set_probe(None)
 
     asyncio.run(_run())
+
+
+def test_call_phase2_and_phase3_tools_via_mcp(tmp_path):
+    """端到端验证新增的 6 个工具：inspect_project / write_memory / flash_firmware / diagnose_crash / check_architecture / scaffold_code。"""
+    mock_probe = MockProbe()
+    mock_probe.connect()
+    mock_probe.inject_cortex_m_fault()
+    default_probe_manager.set_probe(mock_probe)
+
+    fw_proj = tmp_path / "portable_fw"
+    dummy_elf = tmp_path / "dummy.elf"
+    dummy_elf.write_bytes(b"\x7fELF" + b"\x00" * 64)
+
+    async def _run():
+        try:
+            async with Client(mcp) as client:
+                tools = {t.name for t in await client.list_tools()}
+                expected = {
+                    "inspect_project",
+                    "build_firmware",
+                    "inspect_svd",
+                    "probe_control",
+                    "read_memory",
+                    "write_memory",
+                    "flash_firmware",
+                    "inspect_peripheral",
+                    "read_debug_log",
+                    "diagnose_crash",
+                    "check_architecture",
+                    "scaffold_code",
+                }
+                assert expected <= tools
+
+                # 1. scaffold_code + inspect_project + check_architecture
+                scaf = _tool_data(
+                    await client.call_tool("scaffold_code", {"project_dir": str(fw_proj), "kind": "skeleton"})
+                )
+                assert "mcu-harness.toml" in scaf["created_files"]
+
+                prof = _tool_data(await client.call_tool("inspect_project", {"project_dir": str(fw_proj)}))
+                assert prof["build"]["system"] == "cmake"
+
+                arch = _tool_data(await client.call_tool("check_architecture", {"project_dir": str(fw_proj)}))
+                assert arch["passed"] is True and arch["error_count"] == 0
+
+                # 2. write_memory 安全护栏：Option Bytes 硬拒绝、外设需确认、SRAM 直接放行
+                deny = _tool_data(
+                    await client.call_tool(
+                        "write_memory",
+                        {"address": "0x08FFF000", "values": ["0x12345678"], "confirm": True},
+                    )
+                )
+                assert deny["allowed"] is False and deny["safety"]["level"] == "hard_deny"
+
+                need_cfm = _tool_data(
+                    await client.call_tool("write_memory", {"address": "0x42020014", "values": [0x20]})
+                )
+                assert need_cfm["allowed"] is False and need_cfm["safety"]["level"] == "require_confirmation"
+
+                ok_sram = _tool_data(
+                    await client.call_tool("write_memory", {"address": "0x20000100", "values": ["0xCAFEBABE"]})
+                )
+                assert ok_sram["allowed"] is True
+                assert mock_probe.read_u32(0x20000100, 1) == [0xCAFEBABE]
+
+                # 3. diagnose_crash
+                crash = _tool_data(await client.call_tool("diagnose_crash", {}))
+                assert crash["fault_detected"] is True
+                assert any(f["name"] == "PRECISERR" for f in crash["active_faults"])
+
+                # 4. flash_firmware HITL 门控与确认执行
+                fl_gate = _tool_data(
+                    await client.call_tool("flash_firmware", {"firmware_path": str(dummy_elf)})
+                )
+                assert fl_gate["allowed"] is False
+
+                fl_ok = _tool_data(
+                    await client.call_tool(
+                        "flash_firmware", {"firmware_path": str(dummy_elf), "confirm": True}
+                    )
+                )
+                assert fl_ok["allowed"] is True and fl_ok["success"] is True
+
+                # 5. probe_control regs & audit + inspect_peripheral diff_only
+                regs = _tool_data(await client.call_tool("probe_control", {"action": "regs", "reg_names": ["pc", "sp"]}))
+                assert "pc" in regs["registers"]
+                audit = _tool_data(await client.call_tool("probe_control", {"action": "audit"}))
+                assert audit["count"] >= 3
+
+                diff_snap = _tool_data(
+                    await client.call_tool(
+                        "inspect_peripheral",
+                        {"peripheral": "GPIOA", "read_all": True, "diff_only": True, "svd_path": str(SVD_FIX)},
+                    )
+                )
+                assert diff_snap["total_read"] >= 3
+                assert all(r["is_reset_value"] is not True for r in diff_snap["registers"])
+
+                # 6. diagnose_peripheral (clock disabled -> critical) & GPIO_ALL
+                doc = _tool_data(
+                    await client.call_tool(
+                        "diagnose_peripheral",
+                        {"peripheral": "USART1", "svd_path": str(SVD_FIX)},
+                    )
+                )
+                assert any(f["code"] == "CLOCK_DISABLED" for f in doc["findings"])
+
+                # 7. generate_compile_commands & analyze_footprint on demo_make_fw
+                mk_copy = tmp_path / "mk_fw"
+                shutil.copytree(DEMO_MAKE, mk_copy)
+                compdb = _tool_data(
+                    await client.call_tool("generate_compile_commands", {"project_dir": str(mk_copy)})
+                )
+                assert compdb["success"] is True and compdb["entry_count"] >= 1
+
+                bld_mk = _tool_data(await client.call_tool("build_firmware", {"project_dir": str(mk_copy)}))
+                assert bld_mk["success"] is True
+                fp = _tool_data(await client.call_tool("analyze_footprint", {"project_dir": str(mk_copy)}))
+                assert fp["flash_bytes"] > 0
+
+                # 8. watch_variable list on compiled demo_fw.elf
+                w_list = _tool_data(
+                    await client.call_tool("watch_variable", {"action": "list", "project_dir": str(mk_copy)})
+                )
+                assert any(v["name"] == "GPIOA_ODR" for v in w_list["variables"])
+        finally:
+            default_probe_manager.set_probe(None)
+
+    asyncio.run(_run())

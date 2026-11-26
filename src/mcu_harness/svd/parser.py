@@ -19,7 +19,7 @@ import re
 import xml.etree.ElementTree as ET
 from pathlib import Path
 
-from .models import SvdDevice, SvdEnumeratedValue, SvdField, SvdRegister, SvdPeripheral
+from .models import SvdDevice, SvdEnumeratedValue, SvdField, SvdInterrupt, SvdPeripheral, SvdRegister
 
 _RE_BIT_RANGE = re.compile(r"^\[(\d+)\s*:\s*(\d+)\]$")
 _RE_WS = re.compile(r"\s+")
@@ -119,6 +119,15 @@ def parse_svd_root(root: ET.Element) -> SvdDevice:
         else:
             regs = tuple(base_regs)
 
+        # 解析外设关联的 <interrupt> 节点（派生外设只继承基地址/寄存器，不继承别的实例的 IRQn，只解析自身声明的中断）
+        own_irqs: list[SvdInterrupt] = []
+        for ie in pe.findall("interrupt"):
+            iname = _text(ie, "name")
+            ival = _parse_int(_text(ie, "value"))
+            if iname and ival is not None:
+                own_irqs.append(SvdInterrupt(name=iname, value=ival, description=_clean_desc(_text(ie, "description"))))
+        own_irqs.sort(key=lambda x: (x.value, x.name))
+
         p_obj = SvdPeripheral(
             name=pname,
             base_address=base_addr,
@@ -126,6 +135,7 @@ def parse_svd_root(root: ET.Element) -> SvdDevice:
             group_name=group,
             access=periph_access,
             registers=regs,
+            interrupts=tuple(own_irqs),
         )
         parsed_periphs[pname] = p_obj
         return p_obj

@@ -1,122 +1,148 @@
 # MCU Agent Harness
 
-把 **编译器、调试探针、串口/RTT、CMSIS-SVD** 接入大模型的嵌入式调试框架。
-设计蓝图见 [docs/spec.md](docs/spec.md)。
+把 **编译器、编译数据库、内存版图审计、多后端探针（J-Link / OpenOCD）、SEGGER RTT 与串口 UART、CMSIS-SVD、跨外设因果体检医生、DWARF 无停机结构体 Live Watch、Cortex-M 全系死机尸检、分级防砖护栏与可移植代码框架引擎** 统一接入大模型的通用嵌入式研发 Harness。
+
+设计蓝图见 [docs/spec.md](docs/spec.md)，硬件与安全架构记录见 [docs/hardware_target.md](docs/hardware_target.md)。
 
 ## 目录结构
 
-```
+```text
 MCU_harness/
 ├── pyproject.toml
 ├── src/mcu_harness/
 │   ├── __init__.py
-│   ├── server.py              # ✅ MCP Server 入口（FastMCP，stdio 协议）
-│   ├── build/                 # ✅ 无头构建模块（CMake + Makefile）
-│   │   ├── diagnostics.py     #    编译输出解析：GCC / ld / CMake / Make / size
-│   │   ├── runner.py          #    自动识别 CMake / Makefile 并执行构建
-│   │   └── cli.py             #    命令行入口，脱离 AI 单独测试
+│   ├── server.py              # ✅ MCP Server 入口（FastMCP stdio，17 个全生命周期标准工具）
+│   ├── config/                # ✅ 工程配置清单（mcu-harness.toml）与零配置自动探测
+│   │   ├── manifest.py        #    自动识别 .ioc / CMake / Makefile / 最新 .elf & .svd
+│   │   └── cli.py             #    mcu-config：扫描工程或一键生成 mcu-harness.toml
+│   ├── build/                 # ✅ 无头构建、编译数据库生成与内存版图审计
+│   │   ├── diagnostics.py     #    编译降噪：GCC / ld / CMake / Make / size
+│   │   ├── runner.py          #    自动识别 CMake / Makefile 增量构建
+│   │   ├── compdb.py          #    CMake 与传统 Makefile（免 bear）自动生成 compile_commands.json
+│   │   ├── footprint.py       #    ELF/.map 分层内存权重、膨胀归因与 DMA(CCMRAM/DTCM)/栈风险审计
+│   │   └── cli.py             #    mcu-build：构建、--compdb 导出、--footprint 内存分析
 │   ├── svd/                   # ✅ CMSIS-SVD 解析与寄存器位域解码
-│   │   ├── models.py          #    Device / Peripheral / Register / Field 模型
-│   │   ├── parser.py          #    解析 .svd/.svd.gz（derivedFrom / dim / cluster）
-│   │   ├── decoder.py         #    按位域解码十六进制寄存器值
-│   │   └── cli.py             #    命令行入口，离线查表/解码
-│   ├── probe/                 # ✅ 调试探针抽象 + J-Link 后端 + 现场外设解码
-│   │   ├── base.py            #    DebugProbe 抽象接口与 ProbeInfo
-│   │   ├── jlink.py           #    基于 pylink-square 的 SEGGER J-Link 实现
-│   │   ├── mock.py            #    内存模拟探针（无硬件测试用）
-│   │   ├── manager.py         #    长驻会话管理器（线程安全）
+│   │   ├── models.py          #    Device / Peripheral / Register / Field / Interrupt 模型
+│   │   ├── parser.py          #    解析 .svd/.svd.gz（derivedFrom / dim / cluster / interrupt）
+│   │   ├── decoder.py         #    按位域解码十六进制值，精简枚举表格
+│   │   └── cli.py             #    mcu-svd：离线查表与位域解码
+│   ├── probe/                 # ✅ 多探针抽象 + J-Link + OpenOCD + 现场外设解码
+│   │   ├── base.py            #    DebugProbe 接口（读写内存/核心寄存器/复位/烧录/RTT）
+│   │   ├── jlink.py           #    SEGGER J-Link 非侵入后端（AHB-AP 免停机读 + JLINKARM_Go）
+│   │   ├── openocd.py         #    OpenOCD TCL RPC 后端（兼容 ST-Link / CMSIS-DAP / DAPLink）
+│   │   ├── mock.py            #    内存与故障注入模拟探针（无硬件测试用）
+│   │   ├── manager.py         #    线程安全长驻会话管理器
 │   │   ├── peripheral.py      #    SVD + DebugProbe 联合解码外设寄存器
-│   │   └── cli.py             #    命令行入口，验证 J-Link 连板与读寄存器
-│   ├── log/                   # ✅ 非阻塞调试日志模块（SEGGER RTT）
+│   │   └── cli.py             #    mcu-probe：连板读写、核心寄存器、安全烧录与外设查看
+│   ├── diagnose/              # ✅ 跨外设因果体检医生与板级真机对账（深度硬件感知）
+│   │   ├── peripheral_doctor.py #  联合检查 RCC 时钟门控 + NVIC 挂起/使能 + 错误位 + GPIO 复用
+│   │   ├── board_context.py   #    解析 .ioc + [board] 外部器件定义，与真机 GPIO 寄存器漂移比对
+│   │   └── cli.py             #    mcu-doctor：peripheral / pins / board --live
+│   ├── dwarf/                 # ✅ 纯标准库 DWARF v2~v5 无停机变量读取与采样（Live Watch）
+│   │   ├── parser.py          #    解析结构体/联合体/枚举/数组/位域/指针（含 zlib 压缩节与降级回退）
+│   │   ├── live_watch.py      #    免暂停 CPU 单次读块还原嵌套 C 结构体 + 高频时间序列采样
+│   │   └── cli.py             #    mcu-watch：list-vars / read / sample
+│   ├── safety/                # ✅ 分级硬件安全护栏（HITL 防砖与操作审计）
+│   │   └── guard.py           #    Option Bytes / Product State 硬拒绝 + 外设/烧录人工确认门
+│   ├── log/                   # ✅ 非阻塞双模调试日志模块（SEGGER RTT + 串口 UART）
 │   │   ├── ring_buffer.py     #    线程安全环形缓冲（增量 UTF-8 / seq / grep -C）
-│   │   ├── rtt_collector.py   #    后台线程周期轮询 RTT 上行通道（支持 .elf 自动定位）
-│   │   └── cli.py             #    命令行入口，单次拉取或 --follow 跟踪
-│   └── elf/                   # ✅ 纯 Python ELF 符号表解析（定位 _SEGGER_RTT 等）
-│       └── symbols.py
+│   │   ├── rtt_collector.py   #    后台轮询 RTT 上下行（支持 .elf 秒定位 _SEGGER_RTT）
+│   │   ├── uart_collector.py  #    原生 POSIX termios / pyserial 非阻塞串口采集与下行发送
+│   │   └── cli.py             #    mcu-log：RTT 或 --uart 串口单次拉取 / --follow 跟踪
+│   ├── elf/                   # ✅ 纯 Python ELF 符号解析与 DWARF 源码行号映射
+│   │   ├── symbols.py         #    解析 ELF32/ELF64 .symtab（Thumb LSB 自动对齐）
+│   │   └── addr2line.py       #    跨语言环境 addr2line 内联展开 + 符号偏移降级回退
+│   ├── crash/                 # ✅ Cortex-M 全系列死机自动尸检（Armv6-M / v7-M / v8-M）
+│   │   ├── cortex_m.py        #    CPUID + CFSR/HFSR/SFSR/MMFAR/BFAR + 异常栈帧还原 + 修复建议
+│   │   └── cli.py             #    mcu-crash：一键死机破案（含 --mock 故障注入演示）
+│   └── arch/                  # ✅ 嵌入式代码框架守护与跨芯片 PAL/BSP 脚手架
+│       ├── analyzer.py        #    分层依赖检查 + ISR 传递调用图阻塞扫描 + 漏写 volatile 检测
+│       ├── scaffold.py        #    生成 C11 PAL / BSP(cfg-ctx-data-ops+safe_off) / Service 与主机单测
+│       └── cli.py             #    mcu-arch：静态架构体检与可移植代码生成
 ├── examples/
-│   ├── demo_fw/               # CMake 示例工程（主机 gcc 可编译）
-│   └── demo_make_fw/          # Makefile 示例工程（主机 gcc 可编译）
-└── tests/                     # pytest 单元/集成测试
+│   ├── demo_fw/               # CMake 示例工程
+│   └── demo_make_fw/          # Makefile 示例工程
+└── tests/                     # 单元与端到端集成测试套件（兼容 pytest 与 unittest）
 ```
 
-## 快速开始（Linux）
+## 快速开始（Linux，9 个独立命令行工具）
 
 ```bash
-# 运行全部测试（含 MCP Server 端到端测试）
-.venv/bin/python -m pytest -v
+# 1. 自动扫描任意嵌入式工程并生成 mcu-harness.toml
+PYTHONPATH=src python3 -m mcu_harness.config.cli inspect examples/demo_fw
+PYTHONPATH=src python3 -m mcu_harness.config.cli init ./你的固件工程
 
-# 启动 MCP Server（stdio 模式，通常由 Antigravity / MCP 客户端自动拉起）
-PYTHONPATH=src .venv/bin/python -m mcu_harness.server
+# 2. 无头构建、Makefile 免 bear 生成 compile_commands.json 与 .elf/.map 内存版图审计
+PYTHONPATH=src python3 -m mcu_harness.build.cli examples/demo_make_fw -j 4
+PYTHONPATH=src python3 -m mcu_harness.build.cli examples/demo_make_fw --compdb
+PYTHONPATH=src python3 -m mcu_harness.build.cli examples/demo_make_fw --footprint
 
-# 编译示例工程（文本报告，给人/AI 看）
-PYTHONPATH=src .venv/bin/python -m mcu_harness.build.cli examples/demo_fw
+# 3. 跨外设因果体检医生（自动抓 RCC 漏开时钟 / NVIC 未使能 / ORE 溢出 / 引脚漂移）
+PYTHONPATH=src python3 -m mcu_harness.diagnose.cli peripheral USART1 --svd tests/fixtures/stm32h563_mini.svd --mock
+PYTHONPATH=src python3 -m mcu_harness.diagnose.cli pins --svd tests/fixtures/stm32h563_mini.svd --mock
 
-# 故意注入编译错误，看降噪效果
-PYTHONPATH=src .venv/bin/python -m mcu_harness.build.cli examples/demo_fw --reconfigure -D DEMO_INJECT_ERROR=ON
+# 4. DWARF 无停机实时结构体变量观察（Live Watch）与趋势采样
+PYTHONPATH=src python3 -m mcu_harness.dwarf.cli list-vars --elf /你的/firmware.elf
+PYTHONPATH=src python3 -m mcu_harness.dwarf.cli read g_motor_ctrl g_motor_ctrl.state --elf /你的/firmware.elf
+PYTHONPATH=src python3 -m mcu_harness.dwarf.cli sample g_motor_ctrl.rpm --elf /你的/firmware.elf -n 30 --interval-ms 5
 
-# JSON 输出（程序/MCP 使用的格式）
-PYTHONPATH=src .venv/bin/python -m mcu_harness.build.cli examples/demo_fw --json
+# 5. Cortex-M 死机自动尸检（--mock 可离线体验 HardFault 空指针解引用破案报告）
+PYTHONPATH=src python3 -m mcu_harness.crash.cli --mock
+PYTHONPATH=src python3 -m mcu_harness.crash.cli --elf /你的/firmware.elf
 
-# 编译 Makefile 示例工程（自动识别 Makefile 并解析 size 输出）
-PYTHONPATH=src .venv/bin/python -m mcu_harness.build.cli examples/demo_make_fw -j 4
+# 6. 非阻塞 SEGGER RTT 与串口 UART 日志采集
+PYTHONPATH=src python3 -m mcu_harness.log.cli --mock
+PYTHONPATH=src python3 -m mcu_harness.log.cli --list-ports
+PYTHONPATH=src python3 -m mcu_harness.log.cli --uart /dev/ttyACM0 --baud 115200 --tail 50
 
-# 编译真实 STM32H563 Makefile 工程
-PYTHONPATH=src .venv/bin/python -m mcu_harness.build.cli ~/你的STM32工程路径 -j 8
-
-# 只解析已有日志
-PYTHONPATH=src .venv/bin/python -m mcu_harness.build.cli --parse-log tests/fixtures/arm_link_error.log
-
-# 离线查看 SVD 外设 / 解码寄存器值
-PYTHONPATH=src .venv/bin/python -m mcu_harness.svd.cli --svd tests/fixtures/stm32h563_mini.svd --list
-PYTHONPATH=src .venv/bin/python -m mcu_harness.svd.cli --svd tests/fixtures/stm32h563_mini.svd GPIOA MODER 0x00000400
-
-# 无板卡模拟探针自测 / 实机 J-Link 测试（STM32H563）
-PYTHONPATH=src .venv/bin/python -m mcu_harness.probe.cli --mock info
-PYTHONPATH=src .venv/bin/python -m mcu_harness.probe.cli --mock inspect --svd tests/fixtures/stm32h563_mini.svd GPIOA MODER
-PYTHONPATH=src .venv/bin/python -m mcu_harness.probe.cli info
-PYTHONPATH=src .venv/bin/python -m mcu_harness.probe.cli read 0xE000ED00 --count 1
-PYTHONPATH=src .venv/bin/python -m mcu_harness.probe.cli inspect --svd /你的/STM32H563.svd GPIOA MODER
-
-# 非阻塞 RTT 日志采集自测 / 实机读取（传入 --elf 可秒定位 _SEGGER_RTT 地址）
-PYTHONPATH=src .venv/bin/python -m mcu_harness.log.cli --mock
-PYTHONPATH=src .venv/bin/python -m mcu_harness.log.cli --elf /你的/firmware.elf --tail 50
-PYTHONPATH=src .venv/bin/python -m mcu_harness.log.cli --elf /你的/firmware.elf --follow
+# 7. 代码框架静态检查（分层边界 / ISR 阻塞调用链 / volatile）与跨芯片 PAL/BSP 脚手架
+PYTHONPATH=src python3 -m mcu_harness.arch.cli scaffold skeleton /tmp/demo_portable_fw
+PYTHONPATH=src python3 -m mcu_harness.arch.cli scaffold bsp ina226 --dir /tmp/demo_portable_fw
+PYTHONPATH=src python3 -m mcu_harness.arch.cli check /tmp/demo_portable_fw
 ```
 
-## 接入 MCP 客户端（如 Antigravity）
+## MCP 工具全景（17 个标准工具）
 
-在 MCP 配置中添加如下 stdio 服务：
+| 领域 | 工具名 | 核心能力 |
+| :--- | :--- | :--- |
+| **工程、构建与内存** | `inspect_project` | 自动扫描 `.ioc` / CMake / Makefile / 最新 `.elf` & `.svd`，或生成 `mcu-harness.toml` |
+| | `generate_compile_commands` | 为 CMake 或传统 Makefile（零 `bear` 依赖）生成 `compile_commands.json` |
+| | `build_firmware` | 无头增量构建 CMake / Makefile 工程，输出去重错误/警告与段占用 |
+| | `analyze_footprint` | 解析 `.elf` 与 `.map` 统计分层权重、膨胀元凶及 DMA(`CCMRAM`/`DTCM`)/栈净空风险 |
+| **深度硬件感知** | `inspect_board` | 解析 `.ioc` 与板级外部器件定义，支持 `live_check=True` 实时核验真机 GPIO 漂移 |
+| | `diagnose_peripheral` | 一键串联检查 `RCC` 时钟门控、`NVIC` 中断状态、外设错误标志与 `GPIO` 复用 |
+| | `inspect_peripheral` | 实时连板读取外设寄存器并按 SVD 解码（支持 `diff_only=True` 仅看非复位值） |
+| | `inspect_svd` | 离线查询芯片外设寄存器地址与位域枚举定义 |
+| **无停机变量与调试** | `watch_variable` | 基于 DWARF v2~v5 不暂停 CPU 读取 C 嵌套结构体/枚举/数组/指针或高频趋势采样 |
+| | `diagnose_crash` | Cortex-M 全系异常寄存器 + `EXC_RETURN` 压栈帧解包 + DWARF 源码行号还原 |
+| | `read_debug_log` | 后台非阻塞 **SEGGER RTT** 与 **串口 UART** 环形日志增量拉取及下行命令注入 |
+| **探针与安全护栏** | `probe_control` | 管理 J-Link / OpenOCD 会话：`info / connect / disconnect / halt / resume / reset / regs / audit` |
+| | `read_memory` | 按 8/16/32 位读取任意内存或寄存器原始值 |
+| | `write_memory` | 受安全护栏保护的内存/寄存器写入（硬拦截 Option Bytes，外设写入强制 HITL 确认） |
+| | `flash_firmware` | 受 HITL 确认保护的 `.elf/.hex/.bin` 安全烧录与校验复位 |
+| **代码框架引擎** | `check_architecture` | 嵌入式分层依赖防腐检查、ISR 中断传递调用图阻塞扫描、共享变量漏加 `volatile` 检测 |
+| | `scaffold_code` | 一键生成跨芯片 C11 `PAL` / `BSP(cfg-ctx-data-ops + safe_off)` / `Service` 模块及主机单元测试 |
+
+## 接入 MCP 客户端（如 Antigravity）
 
 ```json
 {
   "mcpServers": {
     "mcu-harness": {
-      "command": "/home/Srakoul/Downloads/MCU_harness/.venv/bin/python",
+      "command": "/home/srakoul/Projects/MCU_harness/.venv/bin/python",
       "args": ["-m", "mcu_harness.server"],
       "env": {
-        "PYTHONPATH": "/home/Srakoul/Downloads/MCU_harness/src",
-        "MCU_HARNESS_SVD_PATH": "/你的/STM32H563.svd",
-        "MCU_HARNESS_ELF_PATH": "/你的/firmware.elf",
-        "MCU_HARNESS_DEVICE": "STM32H563ZI"
+        "PYTHONPATH": "/home/srakoul/Projects/MCU_harness/src"
       }
     }
   }
 }
 ```
 
-## 目标硬件
+## 演进路线图
 
-STM32H563（Cortex-M33，当前未启用 TrustZone）+ SEGGER J-Link + SEGGER RTT（人工调试用 Ozone）。
-选型理由与注意事项见 [docs/hardware_target.md](docs/hardware_target.md)。
-
-## 路线图
-
-- [x] Phase 1-1 `build_firmware` 核心逻辑（CMake）
-- [x] Phase 1-2 MCP Server 封装（FastMCP）
-- [x] Phase 1-2b 为 `build_firmware` 补齐 Makefile（`make`）工程支持
-- [x] Phase 1-3a CMSIS-SVD 解析与寄存器位域解码层（`inspect_svd`，离线查表 + 十六进制解码）
-- [x] Phase 1-3b `DebugProbe` 抽象 + J-Link 后端（pylink-square）
-- [x] Phase 1-4 `inspect_peripheral`（SVD + J-Link 实时读硬件寄存器）
-- [x] Phase 1-5 `read_debug_log`（SEGGER RTT 后台环形缓冲）
-- [ ] Phase 2 J-Link GDB Server + GDB/MI 会话管理、`diagnose_crash`（Armv8-M）
-- [ ] Phase 3 HITL 安全护栏（含 H5 Product State 保护）、闭环编排
+- [x] Phase 1 无头构建（CMake/Make）、CMSIS-SVD 解码、J-Link 非侵入探针、SEGGER RTT 环形缓冲与 ELF 符号定位
+- [x] Phase 2 工程自发现清单（`mcu-harness.toml`）、OpenOCD 多探针后端、Cortex-M 全系 `diagnose_crash` 与分级防砖安全护栏
+- [x] Phase 3 嵌入式代码框架引擎（分层边界 + ISR 阻塞调用链 + `volatile` 扫描 + 跨芯片 PAL/BSP/Service 脚手架）
+- [x] Phase 4 深度硬件感知与工程分析（DWARF 无停机结构体 `watch_variable`、跨外设因果体检 `diagnose_peripheral`、`.ioc` 真机引脚漂移核验、`.map` 内存/DMA 审计、Makefile `compile_commands.json` 与原生串口 UART 日志流）
+- [ ] Phase 5 RTOS 任务/栈水位透视（FreeRTOS / Zephyr / RT-Thread）、逻辑分析仪（`sigrok-cli`）外部仪器联动与声明式 HIL 自动化回归测试
