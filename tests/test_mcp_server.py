@@ -281,13 +281,22 @@ def test_call_phase2_and_phase3_tools_via_mcp(tmp_path):
                 tools = {t.name for t in await client.list_tools()}
                 expected = {
                     "inspect_project",
+                    "generate_compile_commands",
                     "build_firmware",
+                    "analyze_footprint",
                     "inspect_svd",
+                    "inspect_peripheral",
+                    "diagnose_peripheral",
+                    "inspect_board",
+                    "watch_variable",
+                    "inspect_rtos",
+                    "trace_target",
+                    "capture_logic",
+                    "run_hil_tests",
                     "probe_control",
                     "read_memory",
                     "write_memory",
                     "flash_firmware",
-                    "inspect_peripheral",
                     "read_debug_log",
                     "diagnose_crash",
                     "check_architecture",
@@ -387,6 +396,43 @@ def test_call_phase2_and_phase3_tools_via_mcp(tmp_path):
                     await client.call_tool("watch_variable", {"action": "list", "project_dir": str(mk_copy)})
                 )
                 assert any(v["name"] == "GPIOA_ODR" for v in w_list["variables"])
+
+                # 9. Phase 5: trace_target / capture_logic / run_hil_tests / inspect_rtos
+                mock_probe.set_word(0xE0001000, (4 << 28))  # DWT_CTRL NUMCOMP=4
+                wp = _tool_data(
+                    await client.call_tool(
+                        "trace_target",
+                        {"action": "set_watchpoint", "watch_target": "0x20000100", "watch_access": "write"},
+                    )
+                )
+                assert wp["active"] is True and wp["slot"] == 0
+
+                csv_file = tmp_path / "pwm.csv"
+                csv_file.write_text("time,PWM\n0.000,1\n0.001,0\n0.004,1\n0.005,0\n0.008,1\n", encoding="utf-8")
+                logic = _tool_data(await client.call_tool("capture_logic", {"csv_path": str(csv_file)}))
+                assert logic["mode"] == "csv"
+                assert abs(logic["csv_report"]["channels"]["PWM"]["duty_cycle_pct"] - 25.0) < 0.1
+
+                hil_spec = tmp_path / "hil.toml"
+                hil_spec.write_text(
+                    'name = "mcp_hil"\n'
+                    '[[tests]]\nname = "reg_ok"\n'
+                    'steps = [{ op = "assert_register", peripheral = "GPIOA", register = "ODR", field = "OD5", eq = 1 }]\n',
+                    encoding="utf-8",
+                )
+                hil = _tool_data(
+                    await client.call_tool(
+                        "run_hil_tests",
+                        {"spec_path": str(hil_spec), "svd_path": str(SVD_FIX)},
+                    )
+                )
+                assert hil["passed"] is True and hil["passed_tests"] == 1
+
+                # inspect_rtos on non-RTOS elf gracefully reports structured error
+                rtos_res = _tool_data(
+                    await client.call_tool("inspect_rtos", {"project_dir": str(mk_copy)})
+                )
+                assert "error" in rtos_res
         finally:
             default_probe_manager.set_probe(None)
 

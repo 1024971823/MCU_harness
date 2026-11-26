@@ -41,19 +41,35 @@ from mcu_harness.dwarf import (
     read_variables as _run_read_variables,
     sample_variable as _run_sample_variable,
 )
+from mcu_harness.hil import (
+    HilError,
+    decode_with_sigrok as _run_decode_with_sigrok,
+    run_hil_suite as _run_hil_suite,
+)
 from mcu_harness.log import default_rtt_collector, default_uart_collector, list_serial_ports
 from mcu_harness.probe import PeripheralSnapshot, default_probe_manager, inspect_peripheral_registers
+from mcu_harness.rtos import RtosError, inspect_rtos as _run_inspect_rtos
 from mcu_harness.safety import default_safety_guard
 from mcu_harness.svd import DecodedRegister, decode_register, find_peripheral, find_register, load_svd
+from mcu_harness.trace import (
+    TraceError,
+    clear_watchpoints as _run_clear_watchpoints,
+    list_watchpoints as _run_list_watchpoints,
+    measure_cycles as _run_measure_cycles,
+    profile_pc_hotspots as _run_profile_pc_hotspots,
+    set_watchpoint as _run_set_watchpoint,
+)
 
 mcp = FastMCP(
     name="mcu-harness",
     instructions=(
-        "通用 MCU 嵌入式开发、深度硬件感知、调试与代码框架工具集（Cortex-M 全系 + J-Link / OpenOCD + RTT/UART + SVD + DWARF）。\n"
+        "通用 MCU 嵌入式开发、深度硬件感知、RTOS/DWT 剖析、HIL 闭环与代码框架工具集（Cortex-M 全系 + J-Link / OpenOCD + RTT/UART + SVD + DWARF）。\n"
         "- 工程与构建：inspect_project 自动识别芯片/SVD/ELF；generate_compile_commands 导出编译库；build_firmware 增量编译；analyze_footprint 审计 Flash/RAM/DMA 段；\n"
         "- 代码与框架：check_architecture 检查分层边界与 ISR 违禁调用/漏写 volatile；scaffold_code 生成跨芯片 PAL/BSP(含 safe_off)/Service 与主机单测；\n"
         "- 深度硬件感知：inspect_board 核对 .ioc/板级接线与真机引脚漂移；diagnose_peripheral 一键联查 RCC 时钟/NVIC/GPIO 复用与错误位；inspect_peripheral / inspect_svd 查解码寄存器；\n"
-        "- 无停机变量与调试：watch_variable 基于 DWARF 不暂停 CPU 实时读取 C 结构体/枚举/数组或高频趋势采样；diagnose_crash 自动破案 HardFault 并还原 C 源码行；\n"
+        "- 无停机变量与内核透视：watch_variable 读取或采样 C 结构体/枚举；inspect_rtos 透视 FreeRTOS/Zephyr/RT-Thread 任务状态与栈高水位；\n"
+        "- 性能剖析与死机诊断：trace_target 非侵入测主频/采样 PC 热点/管理 DWT 硬件观察点；diagnose_crash 自动破案 HardFault 并还原 C 源码行；\n"
+        "- 仪器与 HIL 闭环：capture_logic 解析数字波形或 sigrok-cli 协议；run_hil_tests 执行声明式硬件在环回归；\n"
         "- 内存/烧录/日志：read_memory / write_memory / flash_firmware（高危写与烧录受 HITL 护栏保护，须人工同意后传 confirm=True）；read_debug_log 非阻塞读写 RTT 或 UART 串口日志。"
     ),
 )
@@ -986,6 +1002,190 @@ def scaffold_code(
         res = _run_scaffold_code(project_dir, kind=kind, name=name, overwrite=overwrite)
         return res.to_dict()
     except (ScaffoldError, OSError) as e:
+        return {"error": str(e)}
+
+
+@mcp.tool(
+    name="inspect_rtos",
+    description=(
+        "无需暂停 CPU 透视正在运行的 RTOS 内核状态（自动识别 FreeRTOS / Zephyr / RT-Thread）："
+        "列出所有任务状态（RUNNING/READY/BLOCKED/SUSPENDED）、优先级、栈指针及栈高水位（Stack High-Water-Mark）溢出告警。"
+    ),
+)
+def inspect_rtos(
+    elf_path: Annotated[str | None, Field(description="带调试符号的固件 .elf 路径（不传则自动从 project_dir 或环境变量发现）")] = None,
+    project_dir: Annotated[str | None, Field(description="可选固件工程根目录")] = None,
+    rtos: Annotated[str, Field(description="RTOS 类型：auto（自动探测）/ freertos / zephyr / rtthread")] = "auto",
+    max_tasks: Annotated[int, Field(description="最多遍历任务数上限（1..256）")] = 64,
+    check_stack: Annotated[bool, Field(description="是否扫描栈底高水位水印字节并检测栈溢出")] = True,
+    device: Annotated[str | None, Field(description="目标芯片型号")] = None,
+    backend: Annotated[str | None, Field(description="可选探针后端：jlink / openocd / mock")] = None,
+) -> dict[str, Any]:
+    if max_tasks < 1 or max_tasks > 256:
+        return {"error": "max_tasks must be between 1 and 256"}
+    prof = _try_profile(project_dir)
+    eff_elf = elf_path or os.environ.get("MCU_HARNESS_ELF_PATH") or (prof.paths.elf_path if prof else None)
+    if not eff_elf:
+        return {"error": "请提供 elf_path 参数，或传入已编译出 .elf 的 project_dir"}
+
+    eff_dev = device or (prof.target.device if prof else None)
+    eff_backend = backend or (prof.target.probe_backend if prof and prof.manifest_path else None)
+    try:
+        with default_probe_manager.session(device=eff_dev, backend=eff_backend) as probe:
+            rep = _run_inspect_rtos(probe, eff_elf, rtos=rtos, max_tasks=max_tasks, check_stack=check_stack)
+            return rep.to_dict()
+    except (RtosError, FileNotFoundError, ValueError) as e:
+        return {"error": str(e)}
+    except Exception as e:
+        return {"error": str(e)}
+
+
+@mcp.tool(
+    name="trace_target",
+    description=(
+        "Cortex-M CoreSight DWT 非侵入性能剖析与硬件数据观察点："
+        "- action='measure_cycles'：不暂停 CPU 测算 DWT_CYCCNT 差分与真实 SYSCLK 主频；"
+        "- action='profile_pc'：不暂停 CPU 周期采样 DWT_PCSR 生成函数级/行号级热点图；"
+        "- action='set_watchpoint' / 'list_watchpoints' / 'clear_watchpoints'：支持按地址或 DWARF C 变量表达式挂硬件写/读观察点，抓野指针踩内存。"
+    ),
+)
+def trace_target(
+    action: Annotated[str, Field(description="操作：profile_pc（默认）/ measure_cycles / set_watchpoint / list_watchpoints / clear_watchpoints")] = "profile_pc",
+    duration_ms: Annotated[float, Field(description="action='measure_cycles' 测速时间窗（毫秒）")] = 50.0,
+    core_hz: Annotated[int | None, Field(description="action='measure_cycles' 可选预期主频 Hz，用于核算误差")] = None,
+    samples: Annotated[int, Field(description="action='profile_pc' 采样次数（1..1000）")] = 100,
+    interval_ms: Annotated[float, Field(description="action='profile_pc' 采样间隔毫秒")] = 1.0,
+    watch_target: Annotated[str | int | None, Field(description="action='set_watchpoint' 的地址或 C 变量名（如 'g_ctrl.rpm' 或 '0x20000100'）")] = None,
+    watch_access: Annotated[str, Field(description="观察点触发方式：write / read / rw")] = "write",
+    watch_size: Annotated[int | None, Field(description="观察点宽度：1 / 2 / 4 字节（传变量名时可自动推断）")] = None,
+    slot: Annotated[int | None, Field(description="可选指定 DWT 比较器槽位（不传则自动分配或清空全部）")] = None,
+    elf_path: Annotated[str | None, Field(description="固件 .elf 路径（用于 PC 热点映射源码与解析变量观察点）")] = None,
+    project_dir: Annotated[str | None, Field(description="可选固件工程目录")] = None,
+    device: Annotated[str | None, Field(description="目标芯片型号")] = None,
+    backend: Annotated[str | None, Field(description="可选探针后端：jlink / openocd / mock")] = None,
+) -> dict[str, Any]:
+    act = action.strip().lower()
+    prof = _try_profile(project_dir)
+    eff_elf = elf_path or os.environ.get("MCU_HARNESS_ELF_PATH") or (prof.paths.elf_path if prof else None)
+    eff_proj = project_dir or (prof.project_dir if prof else None)
+    eff_dev = device or (prof.target.device if prof else None)
+    eff_backend = backend or (prof.target.probe_backend if prof and prof.manifest_path else None)
+
+    try:
+        with default_probe_manager.session(device=eff_dev, backend=eff_backend) as probe:
+            if act == "measure_cycles":
+                return _run_measure_cycles(probe, duration_ms=duration_ms, core_hz=core_hz).to_dict()
+            if act == "profile_pc":
+                return _run_profile_pc_hotspots(
+                    probe, elf_path=eff_elf, project_dir=eff_proj, samples=samples, interval_ms=interval_ms
+                ).to_dict()
+            if act == "set_watchpoint":
+                if watch_target is None or watch_target == "":
+                    return {"error": "watch_target is required when action='set_watchpoint'"}
+                return _run_set_watchpoint(
+                    probe,
+                    watch_target,
+                    access=watch_access,
+                    size_bytes=watch_size,
+                    slot=slot,
+                    elf_path=eff_elf,
+                ).to_dict()
+            if act == "list_watchpoints":
+                return _run_list_watchpoints(probe).to_dict()
+            if act == "clear_watchpoints":
+                return _run_clear_watchpoints(probe, slot=slot)
+            return {
+                "error": (
+                    f"Unknown action {action!r} (expected measure_cycles/profile_pc/"
+                    "set_watchpoint/list_watchpoints/clear_watchpoints)"
+                )
+            }
+    except (TraceError, FileNotFoundError, ValueError) as e:
+        return {"error": str(e)}
+    except Exception as e:
+        return {"error": str(e)}
+
+
+@mcp.tool(
+    name="capture_logic",
+    description=(
+        "逻辑分析仪数字波形分析与总线协议解码桥接："
+        "- 传入 csv_path（或 .csv 后缀 input_file）时纯 Python 计算频率、占空比、边沿数与空闲电平；"
+        "- 传入 .sr 采集文件或 driver（如 'fx2lafw'）时调用 sigrok-cli 解码 SPI / I2C / UART / PWM / CAN 协议帧。"
+    ),
+)
+def capture_logic(
+    csv_path: Annotated[str | None, Field(description="数字波形 CSV 文件路径")] = None,
+    input_file: Annotated[str | None, Field(description="sigrok .sr 采集文件或 .csv 文件路径")] = None,
+    driver: Annotated[str | None, Field(description="sigrok 硬件采集驱动名，如 'fx2lafw' / 'saleae-logic16'")] = None,
+    channels: Annotated[str | None, Field(description="采样通道列表，如 'D0,D1,D2'")] = None,
+    samplerate: Annotated[str, Field(description="采样率，默认 '4m'")] = "4m",
+    samples: Annotated[int | None, Field(description="采样点数")] = None,
+    duration_ms: Annotated[float | None, Field(description="采样持续毫秒数")] = None,
+    protocol: Annotated[str | None, Field(description="协议解码器名称，如 'spi' / 'i2c' / 'uart' / 'pwm' / 'can'")] = None,
+    protocol_options: Annotated[dict[str, Any] | str | None, Field(description="协议参数字典或冒号串，如 {'clk':'D0','mosi':'D1'}")] = None,
+    time_unit_s: Annotated[float, Field(description="CSV 时间戳单位换算为秒的倍率（如微秒 CSV 传 1e-6）")] = 1.0,
+) -> dict[str, Any]:
+    try:
+        rep = _run_decode_with_sigrok(
+            csv_path=csv_path,
+            input_file=input_file,
+            driver=driver,
+            channels=channels,
+            samplerate=samplerate,
+            samples=samples,
+            duration_ms=duration_ms,
+            protocol=protocol,
+            protocol_options=protocol_options,
+            time_unit_s=time_unit_s,
+        )
+        return rep.to_dict()
+    except (HilError, ValueError, FileNotFoundError) as e:
+        return {"error": str(e)}
+    except Exception as e:
+        return {"error": str(e)}
+
+
+@mcp.tool(
+    name="run_hil_tests",
+    description=(
+        "执行声明式硬件在环（HIL）自动化测试套件（支持 .toml / .json）："
+        "编排 reset / rtt_write / uart_write / write_memory(受安全护栏拦截) 与 "
+        "assert_variable(异步轮询) / assert_register / assert_memory / assert_log / assert_no_crash；"
+        "无论测试成功还是失败，均保证无条件执行 teardown 安全停机步骤。"
+    ),
+)
+def run_hil_tests(
+    spec_path: Annotated[str, Field(description="HIL 测试套件文件（.toml / .json）路径")],
+    project_dir: Annotated[str | None, Field(description="可选固件工程目录（用于自动发现 elf/svd/探针/安全策略）")] = None,
+    elf_path: Annotated[str | None, Field(description="可选固件 .elf 路径")] = None,
+    svd_path: Annotated[str | None, Field(description="可选芯片 .svd 路径")] = None,
+    confirm: Annotated[bool, Field(description="若套件内含 write_memory 写外设步骤，须经人工批准传 True")] = False,
+    device: Annotated[str | None, Field(description="目标芯片型号")] = None,
+    backend: Annotated[str | None, Field(description="可选探针后端：jlink / openocd / mock")] = None,
+) -> dict[str, Any]:
+    prof = _try_profile(project_dir)
+    eff_dev = device or (prof.target.device if prof else None)
+    eff_backend = backend or (prof.target.probe_backend if prof and prof.manifest_path else None)
+    eff_elf = elf_path or os.environ.get("MCU_HARNESS_ELF_PATH") or (prof.paths.elf_path if prof else None)
+    eff_svd = svd_path or os.environ.get("MCU_HARNESS_SVD_PATH") or (prof.paths.svd_path if prof else None)
+
+    try:
+        with default_probe_manager.session(device=eff_dev, backend=eff_backend) as probe:
+            rep = _run_hil_suite(
+                spec_path,
+                probe=probe,
+                project_dir=project_dir,
+                elf_path=eff_elf,
+                svd_path=eff_svd,
+                rtt_collector=default_rtt_collector,
+                uart_collector=default_uart_collector,
+                confirmed=confirm,
+            )
+            return rep.to_dict()
+    except (HilError, FileNotFoundError, ValueError) as e:
+        return {"error": str(e)}
+    except Exception as e:
         return {"error": str(e)}
 
 

@@ -1,7 +1,7 @@
 [project]
 name = "mcu-harness"
-version = "0.3.0"
-description = "通用 MCU 调试、深度硬件感知与可移植架构 Agent Harness"
+version = "0.4.0"
+description = "通用 MCU 调试、深度硬件感知、RTOS/DWT 剖析、HIL 闭环与可移植架构 Agent Harness"
 readme = "README.md"
 requires-python = ">=3.10"
 dependencies = [
@@ -13,6 +13,7 @@ dependencies = [
 [project.optional-dependencies]
 dev = ["pytest>=7"]
 serial = ["pyserial>=3.5"]
+yaml = ["PyYAML>=6.0"]
 
 [project.scripts]
 # 工程配置清单自动识别与初始化（mcu-harness.toml）
@@ -31,6 +32,12 @@ mcu-crash = "mcu_harness.crash.cli:main"
 mcu-watch = "mcu_harness.dwarf.cli:main"
 # 跨外设因果体检医生（RCC/NVIC/GPIO/ErrorFlags）与 .ioc 真机引脚漂移核验
 mcu-doctor = "mcu_harness.diagnose.cli:main"
+# RTOS 内核透视与栈高水位扫描（FreeRTOS / Zephyr / RT-Thread）
+mcu-rtos = "mcu_harness.rtos.cli:main"
+# Cortex-M DWT 非侵入周期测速、PC 热点采样与硬件数据观察点
+mcu-trace = "mcu_harness.trace.cli:main"
+# 逻辑分析仪数字波形/协议解码与声明式 HIL 硬件在环自动化测试
+mcu-hil = "mcu_harness.hil.cli:main"
 # 分层代码架构/ISR 并发安全检查与跨芯片 PAL/BSP/Service 脚手架生成
 mcu-arch = "mcu_harness.arch.cli:main"
 # MCP Server 入口（stdio 模式）
